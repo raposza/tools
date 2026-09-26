@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Wired into the reactor 2026-08-11. Until then this module had no parent at
+  all, so it inherited no dependency management, no compiler release and no
+  plugin configuration - the first class added to it would have failed for a
+  reason that had nothing to do with the class.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+        <relativePath>../../platform/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>sandbox</artifactId>
+    <name>sandbox</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-sandbox</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The dynamic admin-API client. Declared here because the DARs
+             tab names AdminPackages in its own source; the gRPC transport
+             it carries is that module's, not this one's. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-admin</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Declared, not inherited: SandboxOptions and SandboxApp name
+             CantonInstallations, Edition and VersionId in their own source.
+             -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-canton</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Declared, not inherited: AuthSettings, SandboxForm and
+             SandboxWindow name AuthPlan and TokenShape in their own
+             source. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The JSON Ledger API's user list. Declared because JwtPane names
+             ObjectMapper in its own source; the version is the platform's,
+             which pins core and annotations beside databind for the reason
+             that pom states at length. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- The window. Same version as workbench, from the platform
+             property, because two Swing surfaces on two FlatLaf versions
+             would differ in ways nobody would think to look for. -->
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>${flatlaf.version}</version>
+        </dependency>
+        <!-- Inter, Hack and the tokens - D-848, todo.md DS-7. -->
+        <dependency>
+            <groupId>com.raposza.design</groupId>
+            <artifactId>raposza-design</artifactId>
+        </dependency>
+        <!-- The headless entry point prints to a terminal.
+             slf4j says so once on standard error and then discards everything
+             the stack logs, which on a failed start is the whole diagnosis. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+        <!-- THE MINT, CARRIED RATHER THAN LINKED. It is a Spring Boot
+             executable jar and is launched as a CHILD process, so it cannot
+             be a classpath dependency - it is copied in whole, as a
+             resource, and unpacked at first use. `provided` keeps its
+             contents off this module's own classpath; the copy below is the
+             only thing that consumes it.
+
+             IT IS RAPOSZA OIDC SINCE 2026-09-19 - D-774. It no longer
+             orders the reactor, because it is not in this reactor: it is
+             resolved from the repository, and `raposza_oidc/build.sh` is
+             what puts it there. A build that cannot resolve it says so by
+             name. -->
+        <dependency>
+            <groupId>com.raposza.oidc</groupId>
+            <artifactId>raposza-oidc-server</artifactId>
+            <classifier>app</classifier>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- THE WINDOW ICON, EXPORTED AT BUILD - D-848, todo.md DS-7.
+         src/main/svg/icon.svg is the master, its text converted to
+         paths so the render depends on no installed font. The PNG is
+         written into the classes directory, where the jar and the
+         shaded -app jar pick it up; no PNG is committed. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.raposza.design</groupId>
+                <artifactId>raposza-design-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>icon</id>
+                        <goals>
+                            <goal>export-png</goal>
+                        </goals>
+                        <configuration>
+                            <source>${project.basedir}/src/main/svg/icon.svg</source>
+                            <target>${project.build.outputDirectory}/icon.png</target>
+                            <size>512</size>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- The launcher jar is built ON REQUEST, for the reason workbench states:
+         shading costs seconds and produces a large artifact, and test.sh
+         reaches the package phase on every run. run-sandbox.sh asks for it
+         with -Papp. -->
+    <profiles>
+        <profile>
+            <id>app</id>
+            <build>
+                <plugins>
+                    <!-- INTO THE CLASSES DIRECTORY, so the shade below sweeps
+                         it into the app jar with everything else. The name is
+                         fixed rather than versioned because the code that
+                         unpacks it has to name it. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>carry-the-mint</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy</goal>
+                                </goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.raposza.oidc</groupId>
+                                            <artifactId>raposza-oidc-server</artifactId>
+                                            <version>${raposza.oidc.version}</version>
+                                            <classifier>app</classifier>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.outputDirectory}</outputDirectory>
+                                            <destFileName>raposza-oidc-app.jar</destFileName>
+                                        </artifactItem>
+                                    </artifactItems>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>${maven.shade.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <createDependencyReducedPom>false</createDependencyReducedPom>
+                                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                                    <shadedClassifierName>app</shadedClassifierName>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <exclude>META-INF/*.SF</exclude>
+                                                <exclude>META-INF/*.DSA</exclude>
+                                                <exclude>META-INF/*.RSA</exclude>
+                                                <exclude>META-INF/INDEX.LIST</exclude>
+                                                <exclude>module-info.class</exclude>
+                                                <exclude>META-INF/versions/*/module-info.class</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.raposza.sandbox.app.SandboxApp</mainClass>
+                                        </transformer>
+                                        <!-- The PostgreSQL driver is found
+                                             through META-INF/services, and a
+                                             fat jar that loses it fails only
+                                             from the jar, never from the
+                                             reactor. -->
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>

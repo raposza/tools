@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Process supervision, embedded PostgreSQL, the free-port guard, health and
+  lifecycle ordering. Knows nothing about Canton.
+
+  The module and its rule come first and the code moves
+  afterwards, one package per increment, because a package that lands in the
+  wrong module COMPILES PERFECTLY - the compiler is not a control here, the
+  module graph is, and there is no Git to unwind a half-applied move with
+  here.
+
+  The rule below is the whole reason the module exists this early. It is the
+  same shape as S-1 in the parent: a DECLARED dependency, refused at validate,
+  rather than a sentence in a README that a later increment can read and still
+  get wrong.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-runtime</artifactId>
+    <name>raposza-runtime</name>
+
+    <dependencies>
+        <!-- The only two dependencies the process supervisor has, and the
+             absence of everything else is the point of the module. Nothing
+             here knows what Canton is. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Arrived with the db package. The embedded
+             server is an ordinary OS process, which is why it is here and not
+             in a module that knows about Canton: nothing in this dependency
+             has an opinion about ledgers. -->
+        <dependency>
+            <groupId>io.zonky.test</groupId>
+            <artifactId>embedded-postgres</artifactId>
+        </dependency>
+        <!-- Compile scope, not runtime: SandboxPostgres bootstraps databases
+             through JDBC directly. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>s2-runtime-declares-nothing-above-it</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>false</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.raposza:raposza-canton</exclude>
+                                        <exclude>com.raposza:raposza-sandbox</exclude>
+                                        <exclude>com.raposza:raposza-localnet</exclude>
+                                    </excludes>
+                                    <message>S-2: raposza-runtime is the bottom of the graph and must not declare a dependency on raposza-canton, raposza-sandbox or raposza-localnet. Nothing here may know what Canton is. If a class needs a Canton version, edition, HOCON key or participant, it belongs in raposza-canton. A dependency back on the sandbox would restore the cycle this split exists to remove.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Development aggregator only. It exists so the whole tree builds in one
+  reactor while nothing has been released yet.
+
+  The applications are intended to release on their own schedule. That becomes
+  real when platform has a released version for them to depend on; at that
+  point apps/* drop their parent, import the BOM, and leave this aggregator.
+  Splitting the reactors before a release exists would only mean depending on
+  artifacts that are not there.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.raposza</groupId>
+    <artifactId>raposza-aggregator</artifactId>
+    <version>0.4.0</version>
+    <packaging>pom</packaging>
+    <name>raposza</name>
+
+    <modules>
+        <module>platform</module>
+        <module>apps/sandbox</module>
+        <!-- apps/jwtmint was HERE until 2026-09-19. It is Raposza OIDC now,
+             its own tree and its own reactor beside this one, and this
+             reactor resolves it as a published artefact - D-774, A-32,
+             `raposza_oidc.md` section 4. -->
+        <module>apps/workbench</module>
+    </modules>
+
+</project>

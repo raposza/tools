@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Ledger API v1 client, for Canton 2.x.
+
+  bindings-java brings grpc-api/core/netty/protobuf/stub 1.60.0 and
+  protobuf-java 3.24.0 transitively, so none of those are declared here.
+
+  NOTE: bindings-java 2.x also contains classes under com.daml.ledger.api.v2 -
+  an early skeleton, 297 of whose class names collide with the real v2 API in
+  the 3.x jar. The two artifacts must not share a classpath. Only v1 is used
+  from here.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-target-2x</artifactId>
+    <name>raposza-target-2x</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-cache</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-wire</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.daml</groupId>
+            <artifactId>bindings-java</artifactId>
+            <version>${daml.bindings.v1.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Test scope only. raposza-resolve knows nothing about a ledger
+             generation; this module supplies a live one so the chain can be
+             exercised against a real participant rather than only a fake. The
+             dependency points this way and must not be reversed. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-resolve</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test scope, and the direction matters. The live suite fetches
+             archives here and decodes them there, which is the only place the
+             two halves meet on real bytes. A COMPILE dependency this way would
+             make Daml-LF a property of the transport; reversing it would be
+             worse. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-lf</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test scope, and the direction matters for the third time. P4b's
+             exit criterion is a fixture script run against a live participant,
+             which is the only place the language and a real ledger meet. The
+             language knows no Ledger API generation and must not learn one. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>caql-core</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Test scope, and for the same reason as raposza-lf above. The
+             round-trip probe is the only place where a live payload, the
+             renderer and the coercer meet; the renderer is generation-neutral
+             and must not gain a transport dependency, so the edge points this
+             way and must not be reversed. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-render</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <!-- Translation module: SDK types are permitted here by S-1, so the
+         boundary rule declared in the parent is skipped. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

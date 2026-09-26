@@ -1,0 +1,206 @@
+// Copyright (c) 2026 bentzn
+// SPDX-License-Identifier: Apache-2.0
+package com.raposza.canton.topology;
+
+import com.raposza.canton.jdbc.PgShim;
+import com.raposza.runtime.db.PostgresCoordinates;
+
+/**
+ * The overlay that moves a 3.x sandbox off memory storage and onto PostgreSQL.
+ *
+ * It overlays rather than replaces. The `sandbox` subcommand processes its own
+ * `sandbox/sandbox.conf` - which ships inside the Canton jar and is identical
+ * in 3.4.11 and 3.5.11 - and then applies every `-c` file over it. So the node
+ * names here are that file's names, and only storage is restated.
+ *
+ * All four databases are separate, and all four move together. A participant
+ * that survives a restart beside a synchronizer that forgets is a
+ * desynchronised stack rather than a faster one, so persistence is not a
+ * per-node choice.
+ *
+ * This shape was measured, not assumed: a node started against a PostgreSQL
+ * port with nothing on it, and failed at the connection rather than at the
+ * parse, on 3.4.11 open source, 3.4.11 enterprise and 3.5.11.
+ *
+ * Author Claude/bentzn
+ */
+public final class StorageOverlay {
+
+    /** From sandbox/sandbox.conf inside the jar. */
+    public static final String STR_NODE_PARTICIPANT = "sandbox";
+
+    public static final String STR_NODE_SEQUENCER = "sequencer1";
+
+    public static final String STR_NODE_MEDIATOR = "mediator1";
+
+    /**
+     * The reference sequencer, which is what the bundled config uses and what
+     * needs a driver database of its own.
+     */
+    public static final String STR_SEQUENCER_TYPE = "reference";
+
+    private static final String STR_DATA_SOURCE_CLASS = PgShim.STR_CLASS_STOCK;
+
+    private static final int N_MAX_CONNECTIONS = 10;
+
+    private final PostgresCoordinates pgParticipant;
+    private final PostgresCoordinates pgSequencer;
+    private final PostgresCoordinates pgSequencerDriver;
+    private final PostgresCoordinates pgMediator;
+
+
+    public StorageOverlay(PostgresCoordinates pgParticipant, PostgresCoordinates pgSequencer,
+            PostgresCoordinates pgSequencerDriver, PostgresCoordinates pgMediator) {
+        if (pgParticipant == null || pgSequencer == null || pgSequencerDriver == null
+                || pgMediator == null)
+            throw new IllegalArgumentException("all four databases are required");
+
+        this.pgParticipant = pgParticipant;
+        this.pgSequencer = pgSequencer;
+        this.pgSequencerDriver = pgSequencerDriver;
+        this.pgMediator = pgMediator;
+    }
+
+
+    /**
+     * The four database names a prefix implies, so a second stack on the same
+     * server does not collide with the first.
+     *
+     * @param strPrefix a lower-case prefix, e.g. "raposza"
+     * @return names for participant, sequencer, sequencer driver and mediator
+     */
+    public static String[] databaseNames(String strPrefix) {
+        return new String[] { named(strPrefix, "participant"), named(strPrefix, "sequencer"),
+                named(strPrefix, "sequencer_driver"), named(strPrefix, "mediator") };
+    }
+
+
+    /**
+     * An EMPTY prefix means no prefix, and the separator goes with it. Written
+     * as a join rather than as concatenation because `"" + "_" + name` is
+     * `_participant`, which PostgreSQL accepts and nobody wants to read.
+     *
+     * @param strPrefix the prefix, possibly empty or null
+     * @param strNode the node's own name
+     * @return the database name
+     */
+    private static String named(String strPrefix, String strNode) {
+        if (strPrefix == null || strPrefix.isBlank())
+            return strNode;
+        return strPrefix + "_" + strNode;
+    }
+
+
+    /**
+     * @param strPrefix a lower-case prefix for the four database names
+     * @param pgBase coordinates of the server; its database name is replaced
+     * @return an overlay over the four derived databases
+     */
+    public static StorageOverlay of(String strPrefix, PostgresCoordinates pgBase) {
+        String[] arrName = databaseNames(strPrefix);
+        return new StorageOverlay(pgBase.withDatabase(arrName[0]), pgBase.withDatabase(arrName[1]),
+                pgBase.withDatabase(arrName[2]), pgBase.withDatabase(arrName[3]));
+    }
+
+
+    /**
+     * @return the HOCON to hand to Canton with -c
+     */
+    public String render() {
+        return render(STR_DATA_SOURCE_CLASS);
+    }
+
+
+    /**
+     * The same overlay with the DataSource NAMED, which is the whole of the
+     * Windows fix: PostgreSQL there refuses a statement Canton sends on a
+     * connection no configuration path reaches, so the class that opens the
+     * connection is what corrects it. See {@link PgShim}.
+     *
+     * @param strDataSourceClass the class every storage block names
+     * @return the HOCON to hand to Canton with -c
+     */
+    public String render(String strDataSourceClass) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("// SPDX-License-Identifier: Apache-2.0\n");
+        sb.append("// Generated by raposza-canton. Overlays the sandbox\n");
+        sb.append("// subcommand's own configuration; only storage is restated.\n");
+        sb.append("canton {\n");
+
+        sb.append("  participants {\n");
+        sb.append("    ").append(STR_NODE_PARTICIPANT).append(" {\n");
+        appendStorage(sb, pgParticipant, 6, true, strDataSourceClass);
+        sb.append("    }\n");
+        sb.append("  }\n");
+
+        sb.append("  sequencers {\n");
+        sb.append("    ").append(STR_NODE_SEQUENCER).append(" {\n");
+        appendStorage(sb, pgSequencer, 6, false, strDataSourceClass);
+        sb.append("      sequencer {\n");
+        sb.append("        type = \"").append(STR_SEQUENCER_TYPE).append("\"\n");
+        sb.append("        config {\n");
+        appendStorage(sb, pgSequencerDriver, 10, false, strDataSourceClass);
+        sb.append("        }\n");
+        sb.append("      }\n");
+        sb.append("    }\n");
+        sb.append("  }\n");
+
+        sb.append("  mediators {\n");
+        sb.append("    ").append(STR_NODE_MEDIATOR).append(" {\n");
+        appendStorage(sb, pgMediator, 6, false, strDataSourceClass);
+        sb.append("    }\n");
+        sb.append("  }\n");
+
+        sb.append("}\n");
+        return sb.toString();
+    }
+
+
+    @Override
+    public String toString() {
+        return "storage overlay: " + pgParticipant + ", " + pgSequencer + ", "
+                + pgSequencerDriver + ", " + pgMediator;
+    }
+
+
+    /**
+     * Package-private rather than private since {@link Canton2xConfig} arrived.
+     * The storage block is IDENTICAL on 2.x and 3.x - measured on both, by
+     * parse and then by a live start - so the two renderers share it rather
+     * than each carrying a copy that could drift.
+     */
+    static void appendStorage(StringBuilder sb, PostgresCoordinates pg, int cntIndent,
+            boolean flagMaxConnections) {
+        appendStorage(sb, pg, cntIndent, flagMaxConnections, STR_DATA_SOURCE_CLASS);
+    }
+
+
+    /**
+     * @param sb what is being built
+     * @param pg the database this block points at
+     * @param cntIndent how far in the block sits
+     * @param flagMaxConnections whether to cap the pool
+     * @param strDataSourceClass the class Canton opens its connections with
+     */
+    static void appendStorage(StringBuilder sb, PostgresCoordinates pg, int cntIndent,
+            boolean flagMaxConnections, String strDataSourceClass) {
+        String strPad = " ".repeat(cntIndent);
+        sb.append(strPad).append("storage {\n");
+        sb.append(strPad).append("  type = postgres\n");
+        sb.append(strPad).append("  config {\n");
+        sb.append(strPad).append("    dataSourceClass = \"").append(strDataSourceClass)
+                .append("\"\n");
+        sb.append(strPad).append("    properties = {\n");
+        sb.append(strPad).append("      serverName = \"").append(pg.strHost()).append("\"\n");
+        sb.append(strPad).append("      portNumber = ").append(pg.nPort()).append("\n");
+        sb.append(strPad).append("      databaseName = \"").append(pg.strDatabase()).append("\"\n");
+        sb.append(strPad).append("      user = \"").append(pg.strUser()).append("\"\n");
+        sb.append(strPad).append("      password = \"").append(pg.strPassword()).append("\"\n");
+        sb.append(strPad).append("    }\n");
+        sb.append(strPad).append("  }\n");
+        if (flagMaxConnections)
+            sb.append(strPad).append("  parameters.max-connections = ").append(N_MAX_CONNECTIONS)
+                    .append("\n");
+        sb.append(strPad).append("}\n");
+    }
+}

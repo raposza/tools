@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Wire-to-semantic conversion, shared by both Ledger API generations.
+
+  This module must NOT gain a bindings dependency. It resolves fields through
+  protobuf descriptors, which is what lets one implementation serve v1 and v2 -
+  the two binding jars share 306 class names and can never share a classpath,
+  so a converter written against generated types would exist twice.
+
+  Its tests live in the client modules, next to the jar that supplies real
+  messages to convert. raposza-target-2x carries the v1 set today; lapi2 gets
+  the same assertions against v2 at P5, and that pair IS the cross-generation
+  proof that this module holds.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-wire</artifactId>
+    <name>raposza-wire</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+        <!-- Server reflection stubs. Buying rather than building: the
+             alternative is hand-rolling MethodDescriptors with protobuf
+             marshallers for the very messages the generated stub already
+             carries, to avoid one jar whose transitive set - grpc-api,
+             grpc-core, grpc-protobuf, grpc-stub - is on the classpath already
+             through bindings-java. No transport is declared here: the caller
+             supplies the Channel, so a transport choice is never made in a
+             translation module. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
+        </dependency>
+        <!-- StatusProto, for the Canton error code carried inside a gRPC
+             status. Declared rather than taken transitively. -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <!-- Translation module: SDK types are permitted here by S-1, so the
+         boundary rule declared in the parent is skipped. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

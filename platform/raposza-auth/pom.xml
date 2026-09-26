@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Token and key material. Publishable independently: DevTools3 depends on the
+  same artifact so there is one place to fix Canton token shapes.
+
+  Its inbound dependencies are raposza-model, which has none, and
+  raposza-oidc-core, which is Nimbus and the JDK - so a consumer taking this
+  artifact still does not inherit a tree.
+
+  THE JOSE HALF MOVED OUT 2026-09-19 - D-774. JwksMaterial, JwtMinter,
+  MintAlg, MintKeys, MintSigner, TokenException, TokenShape and TokenSpec
+  are raposza-oidc-core now, in the same package `com.raposza.jwt`, so
+  nothing that imports them changed. What stays here is the CLIENT half:
+  holding a token, presenting it, and planning a participant's auth.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-auth</artifactId>
+    <name>raposza-auth</name>
+
+    <dependencies>
+        <!-- The key material, the algorithms and the signer. Same package,
+             different artefact since 2026-09-19 - D-774. The version is
+             managed in platform/pom.xml. -->
+        <dependency>
+            <groupId>com.raposza.oidc</groupId>
+            <artifactId>raposza-oidc-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

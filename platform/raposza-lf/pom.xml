@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Daml-LF decoding, for BOTH LF generations. One module, not one per
+  generation: com.daml:daml-lf-archive-reader_2.13 decodes an LF 1.15 archive
+  and an LF 2.2 archive through the same API, measured against real archives
+  from a 2.9.6 and a 3.4.10 participant.
+
+  Do NOT add a daml-lf-<version>-archive-java-proto dependency. Those artifacts
+  have no releases beyond LF 1.15 and none at all for LF 2.2, and the reader
+  bundles its own generated proto classes anyway.
+
+  The reader resolves to roughly two dozen jars and about 48 MB including a
+  Scala runtime. That weight is why this module is separate from
+  raposza-cache: the cache and its JSON have no business dragging a Scala
+  runtime onto every classpath that wants to read a cached package.
+
+  This module does not depend on a client module and knows nothing about the
+  Ledger API. It is handed bytes and produces a PackageShape.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-lf</artifactId>
+    <name>raposza-lf</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.daml</groupId>
+            <artifactId>daml-lf-archive-reader_2.13</artifactId>
+            <version>${daml.lf.reader.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <!-- Translation module: SDK types are permitted here by S-1, so the
+         boundary rule declared in the parent is skipped. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

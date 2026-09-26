@@ -1,0 +1,120 @@
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  The sandbox itself: what a sandbox IS, the order it starts in, and the
+  process that runs Canton's own `sandbox` subcommand.
+
+  This module holds the stack. It ended the
+  split holding six classes and all six were about a sandbox, which is exactly
+  what this module was created for; two modules where one was meant is a name
+  that reads oddly forever. The artifact id had never been published - no Git
+  remote, no distributionManagement, 0.1.0-SNAPSHOT - so the rename cost seven
+  files and no Java at all.
+
+  The enforcer rule below is the one this module has always carried, with
+  the sandbox-core exclude dropped because the module it named no longer
+  exists.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-sandbox</artifactId>
+    <name>raposza-sandbox</name>
+
+    <dependencies>
+        <!-- The second edge of the split. install/ lives in
+             increment 5 and this module is one of its consumers: the stack
+             has to know which Canton it is starting. raposza-canton's own
+             pom refuses a dependency back on this one. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-canton</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The first edge of the split, and the direction the enforcer
+             rules exist to hold: the sandbox depends on the runtime, never
+             the other way round. raposza-runtime's own pom refuses a
+             dependency on this module. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Key generation and token minting. This module does not encode a
+             JWK of its own: the participant it starts and the client that
+             mints against it have to agree on one key, and a second RSA JWK
+             encoder in this repository would be commodity, security-critical
+             duplication. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- Compile scope, not runtime: the driver class name is written into
+             Canton's configuration and the database bootstrap uses JDBC
+             directly. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <!-- TEST SCOPE, and it stays that way. The sandbox does not depend
+             on an identity provider - it is handed a JWKS url and does not
+             care what serves it. The live auth suite needs something to
+             serve one, which is what this module is. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-test-idp</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>s2-sandbox-declares-no-localnet</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>false</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.raposza:raposza-localnet</exclude>
+                                    </excludes>
+                                    <message>S-2: raposza-sandbox is the top of the split and must not declare a dependency on raposza-localnet. It may depend on raposza-canton and raposza-runtime, and that direction is the only one the graph permits.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

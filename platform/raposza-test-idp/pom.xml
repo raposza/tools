@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Local test identity provider: a JWKS endpoint and a client-credentials token
+  endpoint over raposza-auth's key material.
+
+  NO NEW DEPENDENCY, and that is the argument that decided build over staging
+  Dex or ORY Hydra. The HTTP surface is com.sun.net.httpserver from the JDK and
+  Nimbus already does the crypto, so a sandbox whose premise is that it comes up
+  with nothing obtained beforehand keeps that premise. Hydra wants its own
+  database and a client registration; Dex wants a staged binary and a config
+  file. Either would be one more artefact the user has to obtain before the
+  sandbox works.
+
+  This is a TEST identity provider. It binds loopback, speaks plain HTTP, has no
+  user store and no persistence, and must never be described as production auth.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.raposza</groupId>
+    <artifactId>raposza-platform</artifactId>
+    <version>0.4.0</version>
+  </parent>
+
+  <artifactId>raposza-test-idp</artifactId>
+  <name>raposza-test-idp</name>
+  <packaging>jar</packaging>
+
+  <dependencies>
+    <!-- The key material, the minter and the token shapes. This module adds an
+         HTTP surface to what is already there; it encodes no JWK of its own. -->
+    <dependency>
+      <groupId>com.raposza</groupId>
+      <artifactId>raposza-auth</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+    </dependency>
+  </dependencies>
+
+</project>

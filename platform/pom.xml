@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.raposza</groupId>
+    <artifactId>raposza-platform</artifactId>
+    <version>0.4.0</version>
+    <packaging>pom</packaging>
+    <name>raposza-platform</name>
+    <description>Explore and act on a Canton participant node</description>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <jackson.version>2.17.2</jackson.version>
+        <!-- JWKS parsing and JWT signing. Nimbus rather than a hand-rolled JWK
+             reader: decoding RSA CRT parameters and dispatching on key type is
+             commodity, security-critical work with a long encoding tail.
+             Version NOT verified as latest; bump deliberately. -->
+        <nimbus.jose.version>9.40</nimbus.jose.version>
+
+        <!-- Raposza OIDC, built from the sibling tree `raposza_oidc/` and
+             resolved from the repository like any other dependency - D-774.
+             It is NOT ${project.version}: the two trees release separately
+             and nothing keeps their numbers in step. NIMBUS MUST MATCH the
+             version oidc-core compiles against, above; bump both or
+             neither. -->
+        <raposza.oidc.version>0.4.0</raposza.oidc.version>
+
+        <!-- Raposza Design, its own workspace and its own release - D-848. -->
+        <raposza.design.version>0.4.0</raposza.design.version>
+
+        <!-- Ledger API stubs. CORRECTED 2026-08-03: the two generations do NOT
+             share an artifactId. v1 comes from com.daml:bindings-java; the v2
+             classes ship inside com.daml:canton-jar, which is installed into
+             the local repository by hand from ~/.daml/sdk/<ver>/canton/. The
+             previously assumed com.daml:canton-bindings-java does not exist on
+             Maven Central - the cached resolve failure was a 404, not a network
+             problem.
+
+             They must never share a classpath: 306 class names collide,
+             measured against the real jars, not 297 as first recorded. -->
+        <daml.bindings.v1.version>2.9.6</daml.bindings.v1.version>
+
+        <!-- Daml-LF archive reader. ONE artifact decodes BOTH LF
+             generations: the 3.4.11 build reads a real LF 1.15 archive
+             from a 2.9.6 participant and a real LF 2.2 archive from a
+             3.4.10 one, through the same call. Do NOT add a
+             daml-lf-<version>-archive-java-proto dependency - those have
+             no releases beyond LF 1.15 and none for LF 2.2, and the
+             reader bundles its own generated protos.
+
+             It pulls a Scala runtime and roughly 48 MB. That is why it
+             lives in raposza-lf alone and not in raposza-cache. -->
+        <daml.lf.reader.version>3.4.11</daml.lf.reader.version>
+        <canton.jar.v2.version>3.4.10</canton.jar.v2.version>
+
+        <!-- Pinned to what bindings-java 2.9.6 resolves transitively, so the
+             descriptor API raposza-wire uses is the same one the generated
+             v1 classes were built against. canton-jar 3.4.10 may carry a
+             different protobuf-java; check before P5 rather than assuming this
+             property covers both. -->
+        <protobuf.version>3.24.0</protobuf.version>
+
+        <!-- gRPC server reflection stubs, for asking a participant to
+             describe its own API. Pinned to the version bindings-java
+             2.9.6 resolves transitively for grpc-api/core/netty/stub -
+             measured from the dependency tree, not assumed - so the
+             stub and the channel it runs on are one generation.
+             grpc-services is NOT pulled in by bindings-java; it is a
+             separate artifact and this is the only place it enters. -->
+        <grpc.version>1.60.0</grpc.version>
+        <slf4j.version>2.0.16</slf4j.version>
+        <flatlaf.version>3.5.1</flatlaf.version>
+        <junit.version>5.11.3</junit.version>
+
+        <!-- Embedded PostgreSQL for the sandbox. Zonky rather than
+             Testcontainers because the sandbox runs as ordinary OS
+             processes and must not require a container runtime; this
+             unpacks a real server binary and runs it directly.
+             Versions NOT verified as latest; bump deliberately. They
+             are the pair the external prototype ran on. -->
+        <zonky.postgres.version>2.2.2</zonky.postgres.version>
+        <postgresql.driver.version>42.7.4</postgresql.driver.version>
+
+        <maven.enforcer.version>3.6.3</maven.enforcer.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.shade.version>3.6.0</maven.shade.version>
+        <maven.jar.version>3.4.2</maven.jar.version>
+        <maven.surefire.version>3.5.2</maven.surefire.version>
+        <maven.failsafe.version>3.5.2</maven.failsafe.version>
+    </properties>
+
+    <modules>
+        <module>raposza-auth</module>
+        <module>raposza-test-idp</module>
+        <module>raposza-model</module>
+        <module>raposza-spi</module>
+        <module>raposza-cache</module>
+        <module>raposza-lf</module>
+        <module>raposza-wire</module>
+        <module>raposza-admin</module>
+        <module>raposza-resolve</module>
+        <module>raposza-render</module>
+        <module>caql-core</module>
+        <module>raposza-target-2x</module>
+        <module>raposza-target-3x</module>
+        <!-- The three modules the stack is split across. In the reactor
+             rather than outside it, because a rule outside the reactor is
+             not run. -->
+        <module>raposza-runtime</module>
+        <module>raposza-canton</module>
+        <module>raposza-sandbox</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <!-- jackson-core and jackson-annotations are pinned to the SAME
+                 version as databind, and that is not tidiness.
+
+                 Managing databind alone leaves core and annotations to nearest
+                 wins, and the Daml artefacts bring an older core transitively.
+                 A module whose classpath holds both then gets databind 2.17
+                 calling into a core that predates the method it wants, and the
+                 failure is a NoSuchMethodError at the first write rather than
+                 anything a build reports:
+
+                   BufferRecycler.releaseToPool(), from FilePackageCache.put
+
+                 It was latent until a test wrote through Jackson on a classpath
+                 that had the Daml artefacts on it. workbench reaches the
+                 same call from the shaded launcher jar, so this is a runtime
+                 defect and not only a test one. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.datatype</groupId>
+                <artifactId>jackson-datatype-jdk8</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus.jose.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.raposza.oidc</groupId>
+                <artifactId>raposza-oidc-core</artifactId>
+                <version>${raposza.oidc.version}</version>
+            </dependency>
+            <!-- Raposza Design - D-848: the tokens, Inter and Hack, the main
+                 logo. Built from design_motherspace/raposza_design_all and
+                 resolved from the local repository until it is on Central. -->
+            <dependency>
+                <groupId>com.raposza.design</groupId>
+                <artifactId>raposza-design</artifactId>
+                <version>${raposza.design.version}</version>
+            </dependency>
+            <!-- The runnable service, CARRIED not linked - apps/sandbox
+                 copies it in as a resource and launches it as a child
+                 process. Never a classpath dependency. -->
+            <dependency>
+                <groupId>com.raposza.oidc</groupId>
+                <artifactId>raposza-oidc-server</artifactId>
+                <version>${raposza.oidc.version}</version>
+                <classifier>app</classifier>
+            </dependency>
+            <dependency>
+                <groupId>com.google.protobuf</groupId>
+                <artifactId>protobuf-java</artifactId>
+                <version>${protobuf.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-services</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-netty</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-protobuf</artifactId>
+                <version>${grpc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.zonky.test</groupId>
+                <artifactId>embedded-postgres</artifactId>
+                <version>${zonky.postgres.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven.compiler.plugin.version}</version>
+                    <configuration>
+                        <!-- Jackson reads records via their record components,
+                             but -parameters keeps ordinary constructor binding
+                             working too. -->
+                        <parameters>true</parameters>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <version>${maven.enforcer.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.version}</version>
+                </plugin>
+                <!-- Unpinned this resolves to 2.4 from the super-POM, whose
+                     archiver adds pom.properties twice and warns about it. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${maven.jar.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven.failsafe.version}</version>
+                </plugin>
+                <!-- SVG to PNG at build time - D-848, todo.md DS-4. Its own
+                     artefact, so Batik stays in the plugin's classpath and
+                     never reaches an application jar. Same version as the
+                     package it is released with. -->
+                <plugin>
+                    <groupId>com.raposza.design</groupId>
+                    <artifactId>raposza-design-maven-plugin</artifactId>
+                    <version>${raposza.design.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <!-- S-1 as a build failure rather than a convention.
+
+             No module may DECLARE a Canton, Daml-LF or protobuf dependency.
+             The translation modules that exist to hold them skip this rule in
+             their own pom, which makes the exemption list visible in exactly
+             the places it applies rather than hidden in a parent.
+
+             searchTransitive is false: see apply_enforcer_s1.py for why, and
+             tighten it once no application module names a target directly. -->
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>s1-no-sdk-types-above-translation</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>false</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.daml</exclude>
+                                        <exclude>com.digitalasset</exclude>
+                                        <exclude>com.google.protobuf</exclude>
+                                        <exclude>io.grpc</exclude>
+                                    </excludes>
+                                    <message>S-1: this module must not declare a Canton, Daml-LF, protobuf or gRPC dependency. Those belong in a translation module (raposza-lf, raposza-wire, raposza-target-2x, raposza-target-3x). If the type is needed above that line, something is missing from the neutral layer: a domain type belongs in raposza-model, a contract a target implements belongs in raposza-spi.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

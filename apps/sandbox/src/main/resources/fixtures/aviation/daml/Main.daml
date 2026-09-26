@@ -1,0 +1,1562 @@
+-- Copyright (c) 2026 bentzn
+-- SPDX-License-Identifier: Apache-2.0
+--
+-- THE AVIATION MAINTENANCE REFERENCE FIXTURE - core model.
+--
+-- Authority: `private/documents/fixture_aviation.md`. The model follows from
+-- that document, not the other way round.
+--
+-- WHAT THIS IS FOR. A small, understandable ledger universe that exercises
+-- Canton, Daml, CaQL and the Workbench: datatype coverage, deterministic
+-- `WHERE` data, party visibility, lifecycle history, and a provenance graph
+-- that branches, diverges and intersects. It is not an aircraft maintenance
+-- application.
+--
+-- SIMPLE CURRENT STATE; COMPLEX HISTORY. Two stories, about thirty active
+-- contracts, and a substantially larger archived history behind them.
+--
+-- THE CORE IS KEYLESS - D-760. Contract keys sit behind LF 2.3 and the ten
+-- installs of the 3.4 line cannot reach it, so keys live in the separate
+-- `Aviation Keys` extension. Nothing here declares `key` or `maintainer`, and
+-- nothing calls `fetchByKey`, `lookupByKey` or `exerciseByKeyCmd`.
+--
+-- THE DENOMINATOR IS THE WEAKEST CELL - D-756, amended by D-760. Only what
+-- EVERY install in `private/inventory/canton` can build. Used here:
+-- `signatory`, `observer`, consuming and nonconsuming choices with an explicit
+-- controller, records, enums and variants with `deriving (Eq, Show)`, and the
+-- Daml.Script calls `allocateParty`, `validateUserId`, `createUser`, `submit`,
+-- `createCmd`, `exerciseCmd` and `debug`. `DA.Date.date` and
+-- `DA.Time.time` build the timestamps.
+--
+-- NOT USED, each for a reason:
+--   * contract keys and the `*ByKey` family - D-760, above;
+--   * interfaces - 3.x only, and a fixture that needs a flag per generation is
+--     not a portable fixture;
+--   * `getTime` and anything ledger-time dependent - the outcome has to be the
+--     same under `--static-time` and without it, so every timestamp on a
+--     contract is a value the script computed.
+--
+-- TWO SCRIPTS ON AN AUTHENTICATED START - D-548. A token cannot carry `actAs`
+-- for a party allocated after it was minted, so `setupParties` allocates and
+-- creates the users under a `participant_admin` token with `--output-file`, and
+-- `setupLedger` submits under `superuser` with `--input-file`. `setup`
+-- composes both and is what an unauthenticated start runs.
+--
+-- Author Claude/bentzn
+
+module Main where
+
+import Daml.Script
+import DA.Date (Month(..), date)
+import DA.Time (time)
+
+-- | The seven organizational authorities. NOT seven companies and NOT seven
+-- participants: one administrative trust domain, seven responsibilities, which
+-- is the point the fixture exists to make.
+data MroParties = MroParties
+  with
+    maintenanceControl : Party
+    technician : Party
+    inspector : Party
+    engineering : Party
+    quality : Party
+    configControl : Party
+    releaseAuthority : Party
+  deriving (Eq, Show)
+
+-- | How bad a defect is. ENUM, for the `!=` and `=` cases of the WHERE matrix.
+data Severity
+  = Minor
+  | Major
+  | Critical
+  deriving (Eq, Show)
+
+-- | Where on the airframe. RECORD with a nested Optional of two different
+-- types, so a renderer that flattens is visibly wrong.
+data Location = Location
+  with
+    ataChapter : Int
+    zone : Optional Text
+    station : Optional Decimal
+  deriving (Eq, Show)
+
+-- | A number with its unit. Never a bare Decimal on a contract: the unit is
+-- part of the fact.
+data Measurement = Measurement
+  with
+    value : Decimal
+    unit : Text
+  deriving (Eq, Show)
+
+-- | What was seen, with what backs it up. LIST of RECORDS, one of whose fields
+-- is itself a LIST of RECORDS - the nesting the Workbench has to render.
+data Evidence = Evidence
+  with
+    description : Text
+    reference : Optional Text
+    measurements : [Measurement]
+  deriving (Eq, Show)
+
+-- | Where a defect is in its life. The business state, distinct from whether a
+-- contract is active.
+data DefectState
+  = Open
+  | Deferred
+  | UnderInvestigation
+  | AwaitingTest
+  | Closed
+  deriving (Eq, Show)
+
+-- | What engineering decided. VARIANT, and the arms carry different payloads -
+-- which is the case a renderer gets wrong if it assumes an enum.
+data Disposition
+  = RepairApproved Text
+  | DeferralApproved Int
+  | ReplacementRequired Text
+  | NoFurtherAction
+  deriving (Eq, Show)
+
+-- | What an investigation concluded. VARIANT with one empty arm and two
+-- carrying payloads.
+data InvestigationOutcome
+  = NoFaultFound
+  | FaultIsolated Text
+  | Inconclusive Text
+  deriving (Eq, Show)
+
+-- | What was done about it.
+data ActionKind
+  = ComponentReplacement Text
+  | WiringRepair Text
+  | Adjustment
+  | Cleaning
+  deriving (Eq, Show)
+
+-- | How an inspection came out.
+data InspectionResult
+  = Passed
+  | PassedWithFindings
+  | Failed
+  deriving (Eq, Show)
+
+-- | Where a serialized component is in its life.
+data ComponentStatus
+  = Installed Text
+  | InShop Text
+  | Serviceable
+  | Unserviceable Text
+  deriving (Eq, Show)
+
+-- | Where a maintenance event is.
+data EventState
+  = EventOpen
+  | EventClosed
+  deriving (Eq, Show)
+
+
+-- | An airframe. The root of Story A and the destination of Story B.
+--
+-- LIFECYCLE-STATE CONTRACT: `UpdateUtilisation` and `SetGrounded` consume and
+-- recreate, so the flight hours and the grounded flag have a history rather
+-- than being overwritten in place.
+template Aircraft
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    configControl : Party
+    quality : Party
+    releaseAuthority : Party
+    msn : Text
+    model : Text
+    operatorName : Text
+    registeredOn : Date
+    flightHours : Decimal
+    cycles : Int
+    grounded : Bool
+    tags : [Text]
+  where
+    signatory maintenanceControl
+    observer configControl, quality, releaseAuthority
+
+    choice UpdateUtilisation : ContractId Aircraft
+      with
+        hoursNew : Decimal
+        cyclesNew : Int
+      controller maintenanceControl
+      do
+        create this with flightHours = hoursNew, cycles = cyclesNew
+
+    choice SetGrounded : ContractId Aircraft
+      with
+        groundedNew : Bool
+      controller maintenanceControl
+      do
+        create this with grounded = groundedNew
+
+
+-- | What is fitted to an airframe, as a revision. Superseded revisions are
+-- archived, so the ACS carries exactly one per aircraft.
+template Configuration
+  with
+    fixtureId : Text
+    configControl : Party
+    maintenanceControl : Party
+    quality : Party
+    msn : Text
+    revision : Int
+    effectiveAt : Time
+    positions : [Text]
+  where
+    signatory configControl
+    observer maintenanceControl, quality
+
+    choice AcceptConfigurationChange : ContractId Configuration
+      with
+        revisionNew : Int
+        effectiveNew : Time
+        positionsNew : [Text]
+      controller configControl
+      do
+        create this with
+          revision = revisionNew
+          effectiveAt = effectiveNew
+          positions = positionsNew
+
+
+-- | One component in one position on one airframe. Archived on removal, which
+-- is what makes "what was here before" a history question.
+template ComponentInstallation
+  with
+    fixtureId : Text
+    configControl : Party
+    maintenanceControl : Party
+    technician : Party
+    msn : Text
+    position : Text
+    serialNumber : Text
+    partNumber : Text
+    installedAt : Time
+    installedBy : Text
+  where
+    signatory configControl
+    observer maintenanceControl, technician
+
+    choice RemoveComponent : ContractId ComponentRemoval
+      with
+        removedAt : Time
+        reason : Text
+      controller technician
+      do
+        create ComponentRemoval with
+          fixtureId
+          configControl
+          maintenanceControl
+          msn
+          position
+          serialNumber
+          removedAt
+          reason
+
+
+-- | The record a removal leaves. A FACT, never consumed: it is how Story B is
+-- traversed from the aircraft end.
+template ComponentRemoval
+  with
+    fixtureId : Text
+    configControl : Party
+    maintenanceControl : Party
+    msn : Text
+    position : Text
+    serialNumber : Text
+    removedAt : Time
+    reason : Text
+  where
+    signatory configControl
+    observer maintenanceControl
+
+
+-- | A serialized component, tracked across airframes. The spine of Story B.
+--
+-- LIFECYCLE-STATE: `SetStatus` consumes and recreates, so the same physical
+-- engine has one active contract and a trail of superseded ones.
+template SerializedComponent
+  with
+    fixtureId : Text
+    configControl : Party
+    engineering : Party
+    quality : Party
+    serialNumber : Text
+    partNumber : Text
+    description : Text
+    totalHours : Decimal
+    totalCycles : Int
+    status : ComponentStatus
+  where
+    signatory configControl
+    observer engineering, quality
+
+    choice SetStatus : ContractId SerializedComponent
+      with
+        statusNew : ComponentStatus
+        hoursNew : Decimal
+        cyclesNew : Int
+      controller configControl
+      do
+        create this with
+          status = statusNew
+          totalHours = hoursNew
+          totalCycles = cyclesNew
+
+
+-- | A work package. Opened, worked, closed - and closing consumes it, so an
+-- open event and a closed event are different contracts.
+template MaintenanceEvent
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    technician : Party
+    inspector : Party
+    releaseAuthority : Party
+    eventId : Text
+    msn : Text
+    description : Text
+    openedAt : Time
+    state : EventState
+  where
+    signatory maintenanceControl
+    observer technician, inspector, releaseAuthority
+
+    choice CloseEvent : ContractId MaintenanceEvent
+      controller maintenanceControl
+      do
+        create this with state = EventClosed
+
+
+-- | One job inside an event. Completing it consumes it and leaves a record.
+template Task
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    technician : Party
+    taskId : Text
+    eventId : Text
+    description : Text
+    assignedTo : Optional Party
+    estimatedHours : Decimal
+  where
+    signatory maintenanceControl
+    observer technician
+
+    -- | ONLY THE TECHNICIAN. An authorization invariant the fixture asserts:
+    -- maintenance control cannot perform the work it scheduled.
+    choice PerformMaintenance : ContractId TaskRecord
+      with
+        completedAt : Time
+        actualHours : Decimal
+        remarks : Text
+      controller technician
+      do
+        create TaskRecord with
+          fixtureId
+          maintenanceControl
+          technician
+          taskId
+          eventId
+          description
+          completedAt
+          actualHours
+          remarks
+
+
+-- | What a completed task leaves behind. A FACT.
+template TaskRecord
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    technician : Party
+    taskId : Text
+    eventId : Text
+    description : Text
+    completedAt : Time
+    actualHours : Decimal
+    remarks : Text
+  where
+    signatory maintenanceControl
+    observer technician
+
+
+-- | An inspection and its outcome. A FACT: never consumed, because "show me
+-- every inspection of MSN-4711" must be a query and not a reconstruction.
+--
+-- THE INDEPENDENT ONE IS THE INSPECTOR'S AND NOBODY ELSE'S - section 15.
+template Inspection
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    inspector : Party
+    quality : Party
+    inspectionId : Text
+    eventId : Text
+    msn : Text
+    kind : Text
+    independent : Bool
+    performedAt : Time
+    result : InspectionResult
+    findings : [Text]
+  where
+    signatory inspector
+    observer maintenanceControl, quality
+
+
+-- | A defect, as a lifecycle-state contract.
+--
+-- THE DEMONSTRATION - fixture_aviation.md section 6.3. `DEF-104` is created,
+-- consumed and recreated three times as its state moves. One business
+-- identity, three contract ids, and the active one is the current truth. The
+-- CORE does that with `defectId` as an ordinary field; the `Aviation Keys`
+-- extension is what reaches it BY key.
+template Defect
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    technician : Party
+    engineering : Party
+    quality : Party
+    defectId : Text
+    msn : Text
+    reportedBy : Text
+    assignedTo : Optional Party
+    reportedAt : Time
+    flightHours : Decimal
+    cycles : Int
+    severity : Severity
+    location : Location
+    description : Text
+    evidence : [Evidence]
+    tags : [Text]
+    grounded : Bool
+    state : DefectState
+  where
+    signatory maintenanceControl
+    observer technician, engineering, quality
+
+    choice AdvanceDefect : ContractId Defect
+      with
+        stateNew : DefectState
+        assignedNew : Optional Party
+        groundedNew : Bool
+      controller maintenanceControl
+      do
+        create this with
+          state = stateNew
+          assignedTo = assignedNew
+          grounded = groundedNew
+
+    choice AddEvidence : ContractId Defect
+      with
+        evidenceNew : Evidence
+      controller technician
+      do
+        create this with evidence = evidence ++ [evidenceNew]
+
+
+-- | One troubleshooting attempt. A FACT, and the reason Story A's two defects
+-- read so differently despite ending in the same state.
+template Investigation
+  with
+    fixtureId : Text
+    maintenanceControl : Party
+    technician : Party
+    engineering : Party
+    investigationId : Text
+    defectId : Text
+    attempt : Int
+    performedAt : Time
+    outcome : InvestigationOutcome
+    notes : Text
+  where
+    signatory technician
+    observer maintenanceControl, engineering
+
+
+-- | Engineering's disposition. A FACT, and ENGINEERING'S ALONE - a defect
+-- needing a disposition cannot simply be closed by maintenance control.
+template EngineeringDecision
+  with
+    fixtureId : Text
+    engineering : Party
+    maintenanceControl : Party
+    quality : Party
+    decisionId : Text
+    defectId : Text
+    decidedAt : Time
+    disposition : Disposition
+    rationale : Text
+  where
+    signatory engineering
+    observer maintenanceControl, quality
+
+
+-- | What was physically done. A FACT.
+template CorrectiveAction
+  with
+    fixtureId : Text
+    technician : Party
+    maintenanceControl : Party
+    engineering : Party
+    actionId : Text
+    defectId : Text
+    kind : ActionKind
+    performedAt : Time
+    partsFitted : [Text]
+    manHours : Decimal
+  where
+    signatory technician
+    observer maintenanceControl, engineering
+
+
+-- | A functional check. A FACT, and the failed ones are kept: "what happened
+-- between the first failed test and release" is the question they answer.
+template OperationalTest
+  with
+    fixtureId : Text
+    technician : Party
+    maintenanceControl : Party
+    engineering : Party
+    testId : Text
+    defectId : Text
+    attempt : Int
+    performedAt : Time
+    passed : Bool
+    measurements : [Measurement]
+  where
+    signatory technician
+    observer maintenanceControl, engineering
+
+
+-- | A component off the wing and in a shop. Consumed when the shop releases it.
+template ShopVisit
+  with
+    fixtureId : Text
+    engineering : Party
+    configControl : Party
+    quality : Party
+    visitId : Text
+    serialNumber : Text
+    shop : Text
+    receivedAt : Time
+    workScope : [Text]
+  where
+    signatory engineering
+    observer configControl, quality
+
+    choice CompleteShopVisit : ContractId ShopVisitRecord
+      with
+        releasedAt : Time
+        findings : [Text]
+      controller engineering
+      do
+        create ShopVisitRecord with
+          fixtureId
+          engineering
+          configControl
+          quality
+          visitId
+          serialNumber
+          shop
+          receivedAt
+          releasedAt
+          workScope
+          findings
+
+
+-- | What a finished shop visit leaves. A FACT, and Story B's middle.
+template ShopVisitRecord
+  with
+    fixtureId : Text
+    engineering : Party
+    configControl : Party
+    quality : Party
+    visitId : Text
+    serialNumber : Text
+    shop : Text
+    receivedAt : Time
+    releasedAt : Time
+    workScope : [Text]
+    findings : [Text]
+  where
+    signatory engineering
+    observer configControl, quality
+
+
+-- | A release-to-service certificate for a component. A FACT.
+template Certification
+  with
+    fixtureId : Text
+    quality : Party
+    engineering : Party
+    configControl : Party
+    certificateId : Text
+    serialNumber : Text
+    issuedOn : Date
+    validUntil : Date
+    statement : Text
+  where
+    signatory quality
+    observer engineering, configControl
+
+
+-- | The aircraft released to service. RELEASE AUTHORITY'S ALONE - section 15,
+-- and the one choice no other role can reach.
+template Release
+  with
+    fixtureId : Text
+    releaseAuthority : Party
+    maintenanceControl : Party
+    quality : Party
+    releaseId : Text
+    eventId : Text
+    msn : Text
+    releasedAt : Time
+    remarks : Optional Text
+  where
+    signatory releaseAuthority
+    observer maintenanceControl, quality
+
+
+-- | Allocate the roles and create the users. ADMIN RIGHTS ONLY.
+--
+-- Separate from `setupLedger` because a token carries `actAs` for party ids
+-- that existed when it was minted and `allocateParty` produces ids that did
+-- not. Run it with `--output-file`, which is where the caller reads the ids
+-- from.
+setupParties : Script MroParties
+setupParties = script do
+  maintenanceControl <- allocateParty "MaintenanceControl"
+  technician <- allocateParty "Technician"
+  inspector <- allocateParty "Inspector"
+  engineering <- allocateParty "Engineering"
+  quality <- allocateParty "Quality"
+  configControl <- allocateParty "ConfigurationControl"
+  releaseAuthority <- allocateParty "ReleaseAuthority"
+
+  -- `UserId` HAS NO EXPORTED CONSTRUCTOR - measured 2026-08-24 on 3.5.12.
+  -- `validateUserId` is the way in, and it is a Script action rather than a
+  -- pure function because it can reject the text.
+  uidControl <- validateUserId "maintenancecontrol"
+  uidTechnician <- validateUserId "technician"
+  uidInspector <- validateUserId "inspector"
+  uidEngineering <- validateUserId "engineering"
+  uidQuality <- validateUserId "quality"
+  uidConfig <- validateUserId "configurationcontrol"
+  uidRelease <- validateUserId "releaseauthority"
+  uidAuditor <- validateUserId "auditor"
+  uidSuper <- validateUserId "superuser"
+
+  createUser (User uidControl (Some maintenanceControl)) [CanActAs maintenanceControl]
+  createUser (User uidTechnician (Some technician)) [CanActAs technician]
+  createUser (User uidInspector (Some inspector)) [CanActAs inspector]
+  createUser (User uidEngineering (Some engineering)) [CanActAs engineering]
+  createUser (User uidQuality (Some quality)) [CanActAs quality]
+  createUser (User uidConfig (Some configControl)) [CanActAs configControl]
+  createUser (User uidRelease (Some releaseAuthority)) [CanActAs releaseAuthority]
+
+  -- THE AUDITOR READS AND NEVER ACTS, which is the cheapest demonstration that
+  -- reading and acting are different rights.
+  createUser (User uidAuditor None)
+    [ CanReadAs maintenanceControl, CanReadAs technician, CanReadAs inspector
+    , CanReadAs engineering, CanReadAs quality, CanReadAs configControl
+    , CanReadAs releaseAuthority ]
+
+  -- THE SUPERUSER, for ease of use rather than realism: a browser opened on
+  -- this fixture for the first time should show something without anybody
+  -- having to choose a user. Participant admin is NOT among these rights and
+  -- that is not an oversight - admin rights do not reach contracts.
+  createUser (User uidSuper None)
+    [ CanActAs maintenanceControl, CanActAs technician, CanActAs inspector
+    , CanActAs engineering, CanActAs quality, CanActAs configControl
+    , CanActAs releaseAuthority
+    , CanReadAs maintenanceControl, CanReadAs technician, CanReadAs inspector
+    , CanReadAs engineering, CanReadAs quality, CanReadAs configControl
+    , CanReadAs releaseAuthority ]
+
+  debug ("aviation parties allocated - "
+         <> show [ maintenanceControl, technician, inspector, engineering
+                 , quality, configControl, releaseAuthority ]
+         <> ", users [maintenancecontrol, technician, inspector, engineering,"
+         <> " quality, configurationcontrol, releaseauthority, auditor, superuser]")
+
+  pure (MroParties with
+    maintenanceControl
+    technician
+    inspector
+    engineering
+    quality
+    configControl
+    releaseAuthority)
+
+
+-- | The fixture's own marker, on every contract it creates.
+fixtureTag : Text
+fixtureTag = "AVIATION-1"
+
+
+-- | A timestamp, built rather than parsed, so nothing depends on ledger time.
+--
+-- @param nYear the year
+-- @param mon the month
+-- @param nDay the day
+-- @param nHour the hour, 24-hour
+-- @param nMinute the minute
+-- @return that instant, UTC
+at : Int -> Month -> Int -> Int -> Int -> Time
+at nYear mon nDay nHour nMinute = time (date nYear mon nDay) nHour nMinute 0
+
+
+-- | Both stories. NEEDS `actAs` FOR ALL SEVEN.
+--
+-- Every statement submits, so this is the half that needs party rights and
+-- none of the admin ones. Run it with `--input-file` carrying what
+-- `setupParties` wrote.
+--
+-- @param parties what `setupParties` allocated
+setupLedger : MroParties -> Script ()
+setupLedger parties = script do
+  let mc = parties.maintenanceControl
+  let tech = parties.technician
+  let insp = parties.inspector
+  let eng = parties.engineering
+  let qa = parties.quality
+  let cfg = parties.configControl
+  let rel = parties.releaseAuthority
+
+  ------------------------------------------------------------------ STORY A
+  -- MSN-4711, the troublesome aircraft. A scheduled inspection finds a
+  -- hydraulic defect; the easy one closes in four steps and the hard one takes
+  -- eleven and ends in the same state. That contrast is the point.
+
+  -- THE CYCLES ARE THE WHERE BOUNDARY - fixture_aviation.md section 7.
+  -- 11999, 12000 and 12001 across the three airframes, so `<`, `<=`, `=`,
+  -- `>=` and `>` are distinguishable without ambiguity.
+  cid4711a <- submit mc do
+    createCmd Aircraft with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      configControl = cfg
+      quality = qa
+      releaseAuthority = rel
+      msn = "MSN-4711"
+      model = "A320-232"
+      operatorName = "Northwind Air"
+      registeredOn = date 2014 Mar 12
+      flightHours = 28100.0
+      cycles = 11840
+      grounded = False
+      tags = ["hydraulics", "storyA"]
+
+  cid5822a <- submit mc do
+    createCmd Aircraft with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      configControl = cfg
+      quality = qa
+      releaseAuthority = rel
+      msn = "MSN-5822"
+      model = "A320-232"
+      operatorName = "Northwind Air"
+      registeredOn = date 2016 Sep 2
+      flightHours = 19700.0
+      cycles = 11940
+      grounded = False
+      tags = ["storyB"]
+
+  cid5822b <- submit mc do
+    exerciseCmd cid5822a UpdateUtilisation with
+      hoursNew = 19801.5
+      cyclesNew = 11972
+  _ <- submit mc do
+    exerciseCmd cid5822b UpdateUtilisation with
+      hoursNew = 19875.25
+      cyclesNew = 11999
+
+  cid6190a <- submit mc do
+    createCmd Aircraft with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      configControl = cfg
+      quality = qa
+      releaseAuthority = rel
+      msn = "MSN-6190"
+      model = "A321-271"
+      operatorName = "Northwind Air"
+      registeredOn = date 2019 Jan 28
+      flightHours = 9100.0
+      cycles = 11950
+      grounded = False
+      tags = ["aog", "storyA"]
+
+  cid6190b <- submit mc do
+    exerciseCmd cid6190a UpdateUtilisation with
+      hoursNew = 9210.0
+      cyclesNew = 12000
+  _ <- submit mc do exerciseCmd cid6190b SetGrounded with groundedNew = True
+
+  -- UTILISATION IS A TRAIL, NOT A FIELD. Three reports climb the airframe to
+  -- the cycle count the WHERE matrix stands on, and each one archives its
+  -- predecessor. The ACS keeps one Aircraft per airframe throughout.
+  cid4711u1 <- submit mc do
+    exerciseCmd cid4711a UpdateUtilisation with
+      hoursNew = 28210.0
+      cyclesNew = 11890
+  cid4711u2 <- submit mc do
+    exerciseCmd cid4711u1 UpdateUtilisation with
+      hoursNew = 28360.75
+      cyclesNew = 11955
+  cid4711u3 <- submit mc do
+    exerciseCmd cid4711u2 UpdateUtilisation with
+      hoursNew = 28450.5
+      cyclesNew = 12001
+
+  -- The airframe is grounded while the defect is open and released at the end,
+  -- so `grounded` has a history rather than a value.
+  cid4711b <- submit mc do exerciseCmd cid4711u3 SetGrounded with groundedNew = True
+
+  -- Configuration, three revisions. Two are archived by the end.
+  cidCfg1 <- submit cfg do
+    createCmd Configuration with
+      fixtureId = fixtureTag
+      configControl = cfg
+      maintenanceControl = mc
+      quality = qa
+      msn = "MSN-4711"
+      revision = 1
+      effectiveAt = at 2026 Jan 15 6 0
+      positions = ["ENG-1", "ENG-2", "APU", "MLG-L", "MLG-R"]
+
+  cidCfg2 <- submit cfg do
+    exerciseCmd cidCfg1 AcceptConfigurationChange with
+      revisionNew = 2
+      effectiveNew = at 2026 Aug 3 14 30
+      positionsNew = ["ENG-1", "ENG-2", "APU", "MLG-L", "MLG-R", "HYD-PUMP-2"]
+
+  -- The engine that leaves, and the installation record that outlives it.
+  cidInst70012 <- submit cfg do
+    createCmd ComponentInstallation with
+      fixtureId = fixtureTag
+      configControl = cfg
+      maintenanceControl = mc
+      technician = tech
+      msn = "MSN-4711"
+      position = "ENG-2"
+      serialNumber = "SN-70012"
+      partNumber = "V2527-A5"
+      installedAt = at 2023 Nov 4 9 15
+      installedBy = "Rui Baptista"
+
+  -- The scheduled inspection that starts everything.
+  cidEventA <- submit mc do
+    createCmd MaintenanceEvent with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      inspector = insp
+      releaseAuthority = rel
+      eventId = "MX-2026-014"
+      msn = "MSN-4711"
+      description = "Scheduled A-check, hydraulics emphasis"
+      openedAt = at 2026 Sep 1 6 0
+      state = EventOpen
+
+  _ <- submit insp do
+    createCmd Inspection with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      inspector = insp
+      quality = qa
+      inspectionId = "INS-3301"
+      eventId = "MX-2026-014"
+      msn = "MSN-4711"
+      kind = "Scheduled A-check"
+      independent = False
+      performedAt = at 2026 Sep 1 8 20
+      result = PassedWithFindings
+      findings = ["Hydraulic pressure fluctuation, system 2"]
+
+  -- THE DIFFICULT DEFECT. Three incarnations of DEF-104, one business
+  -- identity - fixture_aviation.md section 6.3.
+  cidDef104a <- submit mc do
+    createCmd Defect with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      quality = qa
+      defectId = "DEF-104"
+      msn = "MSN-4711"
+      reportedBy = "Marta Sousa"
+      assignedTo = Some tech
+      reportedAt = at 2026 Sep 1 8 42
+      flightHours = 28450.5
+      cycles = 12001
+      severity = Major
+      location = Location with
+        ataChapter = 29
+        zone = Some "MLG bay, left"
+        station = Some 412.50
+      description = "Hydraulic system 2 pressure fluctuates in flight"
+      evidence =
+        [ Evidence with
+            description = "Cockpit pressure indication, cruise"
+            reference = Some "TLB-4711-0912"
+            measurements =
+              [ Measurement with value = 2480.0, unit = "psi"
+              , Measurement with value = 3015.0, unit = "psi" ]
+        ]
+      tags = ["hydraulics", "recurring"]
+      grounded = True
+      state = Open
+
+  _ <- submit tech do
+    createCmd Investigation with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      investigationId = "INV-5501"
+      defectId = "DEF-104"
+      attempt = 1
+      performedAt = at 2026 Sep 1 11 5
+      outcome = NoFaultFound
+      notes = "Ground run normal, no leak, pressure steady at 3000 psi"
+
+  cidDef104b <- submit mc do
+    exerciseCmd cidDef104a AdvanceDefect with
+      stateNew = Deferred
+      assignedNew = None
+      groundedNew = False
+
+  _ <- submit eng do
+    createCmd EngineeringDecision with
+      fixtureId = fixtureTag
+      engineering = eng
+      maintenanceControl = mc
+      quality = qa
+      decisionId = "ENG-7701"
+      defectId = "DEF-104"
+      decidedAt = at 2026 Sep 1 15 40
+      disposition = DeferralApproved 10
+      rationale = "No fault found, MEL 29-2 permits 10 day deferral"
+
+  -- The recurrence. Same defect, second attempt, and this time it is isolated.
+  cidDef104c <- submit mc do
+    exerciseCmd cidDef104b AdvanceDefect with
+      stateNew = UnderInvestigation
+      assignedNew = Some tech
+      groundedNew = True
+
+  _ <- submit tech do
+    createCmd Investigation with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      investigationId = "INV-5502"
+      defectId = "DEF-104"
+      attempt = 2
+      performedAt = at 2026 Sep 6 9 30
+      outcome = FaultIsolated "Pressure transducer 2B intermittent"
+      notes = "Recurrence on sector 3, transducer swapped for test"
+
+  _ <- submit tech do
+    createCmd CorrectiveAction with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      actionId = "CA-9001"
+      defectId = "DEF-104"
+      kind = ComponentReplacement "Pressure transducer 2B"
+      performedAt = at 2026 Sep 6 13 10
+      partsFitted = ["TRN-2B-0047"]
+      manHours = 3.5
+
+  -- THE TEST THAT FAILS, and it is kept active. "What happened between the
+  -- first failed test and release" is the question it answers.
+  cidDef104d <- submit mc do
+    exerciseCmd cidDef104c AdvanceDefect with
+      stateNew = AwaitingTest
+      assignedNew = Some tech
+      groundedNew = True
+
+  _ <- submit tech do
+    createCmd OperationalTest with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      testId = "OPT-4401"
+      defectId = "DEF-104"
+      attempt = 1
+      performedAt = at 2026 Sep 6 16 0
+      passed = False
+      measurements =
+        [ Measurement with value = 2455.0, unit = "psi"
+        , Measurement with value = 62.0, unit = "degC" ]
+
+  -- THE TEST FAILED, so the defect goes BACK to investigation. This is the
+  -- incarnation that makes the difficult defect's history differ from the
+  -- simple one's while both end `Closed`.
+  cidDef104e <- submit mc do
+    exerciseCmd cidDef104d AdvanceDefect with
+      stateNew = UnderInvestigation
+      assignedNew = Some eng
+      groundedNew = True
+
+  _ <- submit eng do
+    createCmd EngineeringDecision with
+      fixtureId = fixtureTag
+      engineering = eng
+      maintenanceControl = mc
+      quality = qa
+      decisionId = "ENG-7702"
+      defectId = "DEF-104"
+      decidedAt = at 2026 Sep 7 8 15
+      disposition = RepairApproved "Harness 29-2B chafing at rib 14"
+      rationale = "Transducer replacement did not clear; wiring inspection ordered"
+
+  _ <- submit tech do
+    createCmd CorrectiveAction with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      actionId = "CA-9002"
+      defectId = "DEF-104"
+      kind = WiringRepair "Harness 29-2B, splice and re-sleeve at rib 14"
+      performedAt = at 2026 Sep 7 12 45
+      partsFitted = ["SPL-22-014", "SLV-29-002"]
+      manHours = 6.0
+
+  -- THE INDEPENDENT INSPECTION. Inspector's alone, and the technician who did
+  -- the work cannot sign it.
+  cidDef104f <- submit mc do
+    exerciseCmd cidDef104e AdvanceDefect with
+      stateNew = AwaitingTest
+      assignedNew = Some tech
+      groundedNew = True
+
+  _ <- submit insp do
+    createCmd Inspection with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      inspector = insp
+      quality = qa
+      inspectionId = "INS-3302"
+      eventId = "MX-2026-014"
+      msn = "MSN-4711"
+      kind = "Independent inspection, hydraulic harness repair"
+      independent = True
+      performedAt = at 2026 Sep 7 15 20
+      result = Passed
+      findings = []
+
+  _ <- submit tech do
+    createCmd OperationalTest with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      testId = "OPT-4402"
+      defectId = "DEF-104"
+      attempt = 2
+      performedAt = at 2026 Sep 7 17 30
+      passed = True
+      measurements =
+        [ Measurement with value = 3002.0, unit = "psi"
+        , Measurement with value = 48.0, unit = "degC" ]
+
+  _ <- submit mc do
+    exerciseCmd cidDef104f AdvanceDefect with
+      stateNew = Closed
+      assignedNew = None
+      groundedNew = False
+
+  -- THE SIMPLE DEFECT, for the divergence of section 10. Same ending, four
+  -- steps instead of eleven.
+  cidDef091a <- submit mc do
+    createCmd Defect with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      quality = qa
+      defectId = "DEF-091"
+      msn = "MSN-4711"
+      reportedBy = "Piet Vermeulen"
+      assignedTo = Some tech
+      reportedAt = at 2026 Aug 24 7 10
+      flightHours = 28310.0
+      cycles = 11960
+      severity = Minor
+      location = Location with
+        ataChapter = 29
+        zone = None
+        station = None
+      description = "Hydraulic pump 1 noisy on start"
+      evidence =
+        [ Evidence with
+            description = "Ground run, pump 1"
+            reference = None
+            measurements = [Measurement with value = 78.0, unit = "dB"]
+        ]
+      tags = ["hydraulics"]
+      grounded = False
+      state = Open
+
+  _ <- submit tech do
+    createCmd Investigation with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      investigationId = "INV-5490"
+      defectId = "DEF-091"
+      attempt = 1
+      performedAt = at 2026 Aug 24 9 0
+      outcome = FaultIsolated "Pump 1 bearing wear"
+      notes = "Noise traced to pump, no other symptom"
+
+  cidDef091b <- submit mc do
+    exerciseCmd cidDef091a AdvanceDefect with
+      stateNew = UnderInvestigation
+      assignedNew = Some tech
+      groundedNew = False
+
+  _ <- submit tech do
+    createCmd CorrectiveAction with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      actionId = "CA-8990"
+      defectId = "DEF-091"
+      kind = ComponentReplacement "Hydraulic pump 1"
+      performedAt = at 2026 Aug 24 13 30
+      partsFitted = ["HYD-PUMP-1-0221"]
+      manHours = 4.0
+
+  _ <- submit tech do
+    createCmd OperationalTest with
+      fixtureId = fixtureTag
+      technician = tech
+      maintenanceControl = mc
+      engineering = eng
+      testId = "OPT-4380"
+      defectId = "DEF-091"
+      attempt = 1
+      performedAt = at 2026 Aug 24 16 15
+      passed = True
+      measurements = [Measurement with value = 61.0, unit = "dB"]
+
+  cidDef091c <- submit mc do
+    exerciseCmd cidDef091b AdvanceDefect with
+      stateNew = AwaitingTest
+      assignedNew = Some tech
+      groundedNew = False
+
+  _ <- submit mc do
+    exerciseCmd cidDef091c AdvanceDefect with
+      stateNew = Closed
+      assignedNew = None
+      groundedNew = False
+
+  -- One task completed, one still open, so the ACS carries both shapes.
+  cidTask1 <- submit mc do
+    createCmd Task with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      taskId = "TSK-1201"
+      eventId = "MX-2026-014"
+      description = "Hydraulic filter replacement, system 2"
+      assignedTo = Some tech
+      estimatedHours = 2.0
+
+  _ <- submit tech do
+    exerciseCmd cidTask1 PerformMaintenance with
+      completedAt = at 2026 Sep 2 10 40
+      actualHours = 2.5
+      remarks = "Filter replaced, no metal in bowl"
+
+  _ <- submit mc do
+    createCmd Task with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      taskId = "TSK-1202"
+      eventId = "MX-2026-014"
+      description = "Placard update, MEL 29-2 cleared"
+      assignedTo = None
+      estimatedHours = 0.5
+
+  ------------------------------------------------------------------ STORY B
+  -- SN-88321 leaves MSN-5822, goes through a shop, and is fitted to MSN-4711.
+  -- The two stories intersect there, which is the whole point of section 17.
+
+  cidEngine88321a <- submit cfg do
+    createCmd SerializedComponent with
+      fixtureId = fixtureTag
+      configControl = cfg
+      engineering = eng
+      quality = qa
+      serialNumber = "SN-88321"
+      partNumber = "V2527-A5"
+      description = "IAE V2500 engine"
+      totalHours = 21440.0
+      totalCycles = 9870
+      status = Installed "MSN-5822"
+
+  cidCfg5822a <- submit cfg do
+    createCmd Configuration with
+      fixtureId = fixtureTag
+      configControl = cfg
+      maintenanceControl = mc
+      quality = qa
+      msn = "MSN-5822"
+      revision = 1
+      effectiveAt = at 2021 Jun 18 12 0
+      positions = ["ENG-1", "ENG-2", "APU", "MLG-L", "MLG-R"]
+
+  cidInst88321a <- submit cfg do
+    createCmd ComponentInstallation with
+      fixtureId = fixtureTag
+      configControl = cfg
+      maintenanceControl = mc
+      technician = tech
+      msn = "MSN-5822"
+      position = "ENG-1"
+      serialNumber = "SN-88321"
+      partNumber = "V2527-A5"
+      installedAt = at 2021 Jun 18 11 0
+      installedBy = "Anja Larsen"
+
+  -- STORY B HAS ITS OWN WORK PACKAGE. The removal did not happen in a vacuum:
+  -- an event was opened for it, a task was worked and closed, and the event
+  -- closed behind it. That is what makes "what happened to my old engine"
+  -- answerable from the MSN-5822 end.
+  cidEvent5822 <- submit mc do
+    createCmd MaintenanceEvent with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      inspector = insp
+      releaseAuthority = rel
+      eventId = "MX-2026-009"
+      msn = "MSN-5822"
+      description = "Engine 1 removal for scheduled shop visit"
+      openedAt = at 2026 Jun 1 6 0
+      state = EventOpen
+
+  cidTask5822 <- submit mc do
+    createCmd Task with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      taskId = "TSK-1150"
+      eventId = "MX-2026-009"
+      description = "Engine 1 removal, SN-88321"
+      assignedTo = Some tech
+      estimatedHours = 12.0
+
+  _ <- submit tech do
+    exerciseCmd cidTask5822 PerformMaintenance with
+      completedAt = at 2026 Jun 2 9 10
+      actualHours = 13.5
+      remarks = "Engine removed, transport stand fitted"
+
+  -- Removal. The installation is archived; the removal record is not.
+  _ <- submit tech do
+    exerciseCmd cidInst88321a RemoveComponent with
+      removedAt = at 2026 Jun 2 8 30
+      reason = "Scheduled shop visit, performance restoration"
+
+  _ <- submit mc do exerciseCmd cidEvent5822 CloseEvent
+
+  _ <- submit cfg do
+    exerciseCmd cidCfg5822a AcceptConfigurationChange with
+      revisionNew = 2
+      effectiveNew = at 2026 Jun 2 10 0
+      positionsNew = ["ENG-2", "APU", "MLG-L", "MLG-R"]
+
+  cidEngine88321b <- submit cfg do
+    exerciseCmd cidEngine88321a SetStatus with
+      statusNew = InShop "Porto Engine Services"
+      hoursNew = 21440.0
+      cyclesNew = 9870
+
+  cidVisit <- submit eng do
+    createCmd ShopVisit with
+      fixtureId = fixtureTag
+      engineering = eng
+      configControl = cfg
+      quality = qa
+      visitId = "SV-2026-08"
+      serialNumber = "SN-88321"
+      shop = "Porto Engine Services"
+      receivedAt = at 2026 Jun 5 10 0
+      workScope = ["Performance restoration", "HPT blade set", "Borescope"]
+
+  _ <- submit eng do
+    exerciseCmd cidVisit CompleteShopVisit with
+      releasedAt = at 2026 Jul 28 16 0
+      findings = ["HPT stage 1 blades replaced", "No further finding"]
+
+  _ <- submit qa do
+    createCmd Certification with
+      fixtureId = fixtureTag
+      quality = qa
+      engineering = eng
+      configControl = cfg
+      certificateId = "CRS-2026-0412"
+      serialNumber = "SN-88321"
+      issuedOn = date 2026 Jul 29
+      validUntil = date 2028 Jul 28
+      statement = "Released to service, EASA Form 1, performance restoration"
+
+  cidEngine88321c <- submit cfg do
+    exerciseCmd cidEngine88321b SetStatus with
+      statusNew = Serviceable
+      hoursNew = 21440.0
+      cyclesNew = 9870
+
+  -- THE INTERSECTION. The engine lands on the aircraft of Story A, and the
+  -- configuration moves to revision 3 because of it.
+  _ <- submit tech do
+    exerciseCmd cidInst70012 RemoveComponent with
+      removedAt = at 2026 Aug 30 7 45
+      reason = "Replaced by SN-88321 after shop visit"
+
+  _ <- submit cfg do
+    createCmd ComponentInstallation with
+      fixtureId = fixtureTag
+      configControl = cfg
+      maintenanceControl = mc
+      technician = tech
+      msn = "MSN-4711"
+      position = "ENG-2"
+      serialNumber = "SN-88321"
+      partNumber = "V2527-A5"
+      installedAt = at 2026 Aug 30 15 20
+      installedBy = "Marta Sousa"
+
+  _ <- submit cfg do
+    exerciseCmd cidEngine88321c SetStatus with
+      statusNew = Installed "MSN-4711"
+      hoursNew = 21440.0
+      cyclesNew = 9870
+
+  cidCfg3 <- submit cfg do
+    exerciseCmd cidCfg2 AcceptConfigurationChange with
+      revisionNew = 3
+      effectiveNew = at 2026 Aug 30 15 30
+      positionsNew = ["ENG-1", "ENG-2", "APU", "MLG-L", "MLG-R", "HYD-PUMP-2"]
+
+  -- REVISION 4: the transducer and the harness repair of Story A. The
+  -- configuration of one airframe therefore has three superseded revisions
+  -- behind the one active contract.
+  _ <- submit cfg do
+    exerciseCmd cidCfg3 AcceptConfigurationChange with
+      revisionNew = 4
+      effectiveNew = at 2026 Sep 7 18 0
+      positionsNew = ["ENG-1", "ENG-2", "APU", "MLG-L", "MLG-R", "HYD-PUMP-2"]
+
+  -- The old engine, so that "what happened to my old engine" has an answer.
+  cidEngine70012a <- submit cfg do
+    createCmd SerializedComponent with
+      fixtureId = fixtureTag
+      configControl = cfg
+      engineering = eng
+      quality = qa
+      serialNumber = "SN-70012"
+      partNumber = "V2527-A5"
+      description = "IAE V2500 engine"
+      totalHours = 26840.0
+      totalCycles = 12390
+      status = Installed "MSN-4711"
+
+  _ <- submit cfg do
+    exerciseCmd cidEngine70012a SetStatus with
+      statusNew = Unserviceable "Awaiting disposition, high cycle count"
+      hoursNew = 26980.0
+      cyclesNew = 12450
+
+  ------------------------------------------------------- THE THIRD AIRFRAME
+  -- MSN-6190 IS NOT A ROW. It carries the `cycles = 12000` boundary value of
+  -- the WHERE matrix, and it is grounded - so it needs a reason, an open
+  -- defect and a history of its own. It is also the fixture's one defect that
+  -- is still open at the end, which is what makes "show me grounded aircraft"
+  -- and "show me open defects" different questions with different answers.
+  cidDef118a <- submit mc do
+    createCmd Defect with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      quality = qa
+      defectId = "DEF-118"
+      msn = "MSN-6190"
+      reportedBy = "Sofia Marques"
+      assignedTo = Some tech
+      reportedAt = at 2026 Sep 9 5 55
+      flightHours = 9210.0
+      cycles = 12000
+      severity = Critical
+      location = Location with
+        ataChapter = 32
+        zone = Some "Nose gear bay"
+        station = Some 210.00
+      description = "Nose gear downlock proximity sensor intermittent"
+      evidence =
+        [ Evidence with
+            description = "Gear disagree on final approach"
+            reference = Some "TLB-6190-0441"
+            measurements = [Measurement with value = 0.85, unit = "mm"]
+        , Evidence with
+            description = "Rigging check, target gap"
+            reference = None
+            measurements =
+              [ Measurement with value = 1.20, unit = "mm"
+              , Measurement with value = 0.90, unit = "mm" ]
+        ]
+      tags = ["landing-gear", "aog"]
+      grounded = True
+      state = Open
+
+  _ <- submit tech do
+    createCmd Investigation with
+      fixtureId = fixtureTag
+      maintenanceControl = mc
+      technician = tech
+      engineering = eng
+      investigationId = "INV-5610"
+      defectId = "DEF-118"
+      attempt = 1
+      performedAt = at 2026 Sep 9 10 20
+      outcome = Inconclusive "Sensor gap within limits on jacks, fault not reproduced"
+      notes = "Awaiting engineering disposition; aircraft remains grounded"
+
+  cidDef118b <- submit mc do
+    exerciseCmd cidDef118a AdvanceDefect with
+      stateNew = UnderInvestigation
+      assignedNew = Some eng
+      groundedNew = True
+
+  _ <- submit mc do
+    exerciseCmd cidDef118b AdvanceDefect with
+      stateNew = AwaitingTest
+      assignedNew = Some tech
+      groundedNew = True
+
+  ---------------------------------------------------------------- RELEASE
+  -- Close the event and release the aircraft. RELEASE AUTHORITY'S ALONE.
+  _ <- submit mc do exerciseCmd cidEventA CloseEvent
+
+  _ <- submit rel do
+    createCmd Release with
+      fixtureId = fixtureTag
+      releaseAuthority = rel
+      maintenanceControl = mc
+      quality = qa
+      releaseId = "REL-2026-0331"
+      eventId = "MX-2026-014"
+      msn = "MSN-4711"
+      releasedAt = at 2026 Sep 8 9 0
+      remarks = Some "Hydraulic system 2 serviceable, engine 2 replaced"
+
+  _ <- submit mc do exerciseCmd cid4711b SetGrounded with groundedNew = False
+
+  debug "aviation fixture ready."
+
+
+-- | Both halves, for a participant that checks nothing.
+setup : Script ()
+setup = script do
+  parties <- setupParties
+  setupLedger parties
+
+
+-- | Counted by recursion, and never `length`.
+--
+-- The pet shop's own header records the rule this follows: recursion rather
+-- than the Foldable helpers, so nothing depends on which of them a given SDK's
+-- Prelude re-exports. A fixture whose whole value is compiling unchanged from
+-- 2.8 to 3.5 is the last place to spend that risk to save four lines.
+countOf : [a] -> Int
+countOf [] = 0
+countOf (_ :: rest) = 1 + countOf rest
+
+
+-- | The active contract counts, per template, as the roles that sign them see
+-- them. THE DETERMINISTIC HALF OF fixture_aviation.md SECTION 18.
+--
+-- It prints rather than asserts. The numbers are banked by the harness that
+-- runs it, and an assertion here would make the fixture refuse to load on the
+-- day somebody legitimately adds a contract to it.
+--
+-- @param parties what `setupParties` allocated
+verify : MroParties -> Script ()
+verify parties = script do
+  lstAircraft <- query @Aircraft parties.maintenanceControl
+  lstConfig <- query @Configuration parties.configControl
+  lstInstall <- query @ComponentInstallation parties.configControl
+  lstRemoval <- query @ComponentRemoval parties.configControl
+  lstComponent <- query @SerializedComponent parties.configControl
+  lstEvent <- query @MaintenanceEvent parties.maintenanceControl
+  lstTask <- query @Task parties.maintenanceControl
+  lstTaskRecord <- query @TaskRecord parties.maintenanceControl
+  lstInspection <- query @Inspection parties.inspector
+  lstDefect <- query @Defect parties.maintenanceControl
+  lstInvestigation <- query @Investigation parties.technician
+  lstDecision <- query @EngineeringDecision parties.engineering
+  lstAction <- query @CorrectiveAction parties.technician
+  lstTest <- query @OperationalTest parties.technician
+  lstVisit <- query @ShopVisit parties.engineering
+  lstVisitRecord <- query @ShopVisitRecord parties.engineering
+  lstCert <- query @Certification parties.quality
+  lstRelease <- query @Release parties.releaseAuthority
+
+  let nTotal = countOf lstAircraft + countOf lstConfig + countOf lstInstall
+        + countOf lstRemoval + countOf lstComponent + countOf lstEvent
+        + countOf lstTask + countOf lstTaskRecord + countOf lstInspection
+        + countOf lstDefect + countOf lstInvestigation + countOf lstDecision
+        + countOf lstAction + countOf lstTest + countOf lstVisit
+        + countOf lstVisitRecord + countOf lstCert + countOf lstRelease
+
+  debug ("AVIATION COUNTS"
+    <> " Aircraft=" <> show (countOf lstAircraft)
+    <> " Configuration=" <> show (countOf lstConfig)
+    <> " ComponentInstallation=" <> show (countOf lstInstall)
+    <> " ComponentRemoval=" <> show (countOf lstRemoval)
+    <> " SerializedComponent=" <> show (countOf lstComponent)
+    <> " MaintenanceEvent=" <> show (countOf lstEvent)
+    <> " Task=" <> show (countOf lstTask)
+    <> " TaskRecord=" <> show (countOf lstTaskRecord)
+    <> " Inspection=" <> show (countOf lstInspection)
+    <> " Defect=" <> show (countOf lstDefect)
+    <> " Investigation=" <> show (countOf lstInvestigation)
+    <> " EngineeringDecision=" <> show (countOf lstDecision)
+    <> " CorrectiveAction=" <> show (countOf lstAction)
+    <> " OperationalTest=" <> show (countOf lstTest)
+    <> " ShopVisit=" <> show (countOf lstVisit)
+    <> " ShopVisitRecord=" <> show (countOf lstVisitRecord)
+    <> " Certification=" <> show (countOf lstCert)
+    <> " Release=" <> show (countOf lstRelease)
+    <> " TOTAL=" <> show nTotal)
+
+
+-- | Both halves and the counts, for a participant that checks nothing.
+setupAndVerify : Script ()
+setupAndVerify = script do
+  parties <- setupParties
+  setupLedger parties
+  verify parties

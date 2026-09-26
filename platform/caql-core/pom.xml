@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  The fixture language. This module holds the LANGUAGE and nothing else - no
+  ledger, no registry, no renderer. Its dependencies are Jackson and a logger,
+  and that is the point: a parser that could reach a participant would be
+  tested against one.
+
+  The runner arrives in the same increment and brings raposza-model,
+  raposza-render and raposza-resolve with it. Adding them now would be
+  declaring dependencies for code that does not exist.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>caql-core</artifactId>
+    <name>caql-core</name>
+
+    <dependencies>
+        <!-- The semantic model, for what a binding HOLDS. Still no client, no
+             registry and no renderer: the environment is arithmetic over values
+             and contract ids, and a module that could reach a participant would
+             be tested against one. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Template reference resolution against the registry snapshot. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-resolve</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The coercer, which is where a substitution's type is checked -
+             it is the only component holding both the binding and the declared
+             type at the same point. Substitution_i is in raposza-model and
+             carries nothing about a script. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-render</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+</project>

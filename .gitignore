@@ -1,0 +1,22 @@
+# Copyright (c) 2026 bentzn
+# SPDX-License-Identifier: Apache-2.0
+#
+# The one agent instruction file is AGENTS.md. The names below would be a
+# second one, and are ignored.
+CLAUDE.md
+GEMINI.md
+.cursorrules
+
+# Editors and desktops
+*.swp
+*~
+.idea/
+.vscode/
+.project
+.classpath
+.settings/
+.factorypath
+.DS_Store
+
+# Maven
+target/

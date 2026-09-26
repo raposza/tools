@@ -1,0 +1,18 @@
+# Raposza / DevTools3 profile catalogue
+# name...  protocol  host  ledger-port  json-port  scope  audience  [mode  colour]
+#
+# Six fields after the protocol is the legacy DevTools3 form and still parses.
+# Eight is the current form. "-" means absent. mode is ro or rw.
+# An ABSENT mode reads as READ_ONLY.
+#
+# The "-" are NOT optional. Writing
+#     Local Sandbox  http  localhost  6865  7575  rw  #2e7d32
+# is six fields, not eight: "rw" is read as the scope and the profile connects
+# READ-ONLY. The line is rejected rather than parsed that way.
+
+# "daml sandbox" listens on 6865. A Canton participant's Ledger API
+# defaults to 5011. They are different ports and confusing them looks
+# like an unreachable participant.
+Local Sandbox      http   localhost      6865  7575  -              -                                       rw  #2e7d32
+Shared DEV         https  canton-dev     5011  7575  daml_ledger_api  -                                     ro  #c62828
+Shared TEST        https  canton-test    5011  -     -              https://daml.com/jwt/aud/participant/p1 ro  #c62828

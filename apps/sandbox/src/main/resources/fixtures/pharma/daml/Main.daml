@@ -1,0 +1,606 @@
+-- Copyright (c) 2026 bentzn
+-- SPDX-License-Identifier: Apache-2.0
+--
+-- THE PHARMA FIXTURE - Story 1, the clean lot, and Story 2, the problem lot.
+-- `fixture_pharma.md` is the narrative.
+--
+-- STORY 2 IS WHERE THE TWO PARTICIPANTS STOP AGREEING. Every template of
+-- Story 1 names parties from both organizations, so both see all of it -
+-- which is correct for a joint process and shows no privacy at all.
+-- `Quarantine` names NO supplier party: a lot held back is the producer's
+-- own decision until it chooses to raise a deviation, and that is the
+-- materially different view `fixture_pharma.md` asks the fixture to produce.
+--
+-- TWO ORGANIZATIONS ON TWO PARTICIPANTS. Every producer party is hosted on
+-- app-provider and every supplier party on app-user, which is what LocalNetND
+-- presents once the Super Validator is set aside as infrastructure - his
+-- correction of 2026-09-21.
+--
+-- A PARTY PER ACTUAL USER - his instruction, 2026-09-22. The model had one
+-- `producer` party and one `supplier` party, which is a label for an
+-- organization and not a party anybody in one would hold. Each organization
+-- now carries the roles `fixture_pharma.md` names in its Topology section -
+-- Procurement, Quality Assurance, Receiving and Manufacturing on the producer;
+-- Sales, Production, Quality Assurance and Shipping on the supplier - and each
+-- is one real person with one ledger user behind it. A choice is controlled by
+-- the role that would sign for it in the plant, not by the company.
+--
+-- WHICH MEANS OBSERVERS ARE NOW LOAD BEARING. A controller that is not a
+-- stakeholder cannot see the contract it is meant to act on, so every template
+-- names the roles that must read it next. That is not decoration: it is the
+-- privacy statement of the fixture, and it is what makes `sv` and the other
+-- organization's roles NOT see what they should not.
+--
+-- EVERY CHOICE IS STILL CONTROLLED FROM ONE PARTICIPANT AT A TIME. A
+-- submission carries the authority of the parties acting in it plus the
+-- authority the exercised contract delegates, so the propose/accept chain
+-- commits from a single participant and never needs a party hosted on both.
+-- MEASURED 2026-09-22, `probes/pharma`: the producer's authority reaches the
+-- supplier's participant through the choice, and the reverse exercise is
+-- refused with DAML_AUTHORIZATION_ERROR. Splitting the parties by role does not
+-- move that line - `AcceptOrder` is still exercised by a supplier-side party
+-- against a contract a producer-side party signed.
+--
+-- RICH TYPES SINCE 2026-09-22, and every one of them measured before it was
+-- used: an enum on the disposition, a variant on the supplier's response and
+-- a map on the retest - `probes/pharma/types_probe.py`, which submitted each
+-- candidate encoding against a running participant and recorded what was
+-- refused as well as what was taken.
+--
+-- KEYLESS - his decision, 2026-09-22, the shape D-760 gave Aviation. The stable
+-- identifiers are here as Text and a `Pharma Keys` extension is where a key
+-- belongs if one is ever wanted.
+--
+-- Author Claude/bentzn
+module Main where
+
+import DA.TextMap (TextMap)
+
+-- | A measured range, as a record inside a record inside a list - the shape
+-- `caql_where_design.md` section 4 reaches with a dotted path.
+data Range = Range
+  with
+    low : Decimal
+    high : Decimal
+  deriving (Eq, Show)
+
+-- | HOW STORY 2 ENDS, as an ENUM rather than as Text.
+--
+-- MEASURED 2026-09-22, `probes/pharma/types_probe.py`: the JSON Ledger API
+-- takes an enum as the BARE CONSTRUCTOR STRING - `"ConditionallyAccepted"` -
+-- and refuses a tagged object with `Expected ujson.Str`. It was Text carrying
+-- one of these five names until that was known, which is what the probe
+-- existed to settle.
+--
+-- THE FIVE ARE `fixture_pharma.md`'s, in its order.
+data DispositionOutcome
+  = AcceptedAfterInvestigation
+  | ConditionallyAccepted
+  | RejectedAndReturned
+  | Destroyed
+  | ReplacedByAnotherLot
+  deriving (Eq, Show)
+
+-- | What the supplier answered a deviation WITH - a variant, because it is one
+-- of these and not several.
+--
+-- MEASURED the same day: a variant goes as `{"tag": ..., "value": ...}`, and
+-- the participant says so itself when it is not - `Variant type json must have
+-- 'tag' and 'value' fields`. A constructor taking nothing carries
+-- `"value": {}`.
+--
+-- `fixture_pharma.md`: "The supplier can respond with evidence, additional
+-- measurements, explanations, or a proposed corrective action." One response,
+-- one of those.
+data ResponseEvidence
+  = RetainSample QualityTest
+  | Statement Text
+  | CorrectiveAction Text
+  deriving (Eq, Show)
+
+-- | One test the supplier or the producer performed.
+data QualityTest = QualityTest
+  with
+    name : Text
+    method : Text
+    measured : Decimal
+    unit : Text
+    permitted : Range
+    passed : Bool
+  deriving (Eq, Show)
+
+-- | What the two organizations agreed the material has to be.
+--
+-- QUALITY ASSURANCE OWNS A SPECIFICATION on both sides; Procurement reads it
+-- because it is what an order is placed against.
+template MaterialSpecification
+  with
+    producerQa : Party
+    producerProcurement : Party
+    supplierQa : Party
+    materialId : Text
+    description : Text
+    tests : [Text]
+  where
+    signatory producerQa
+    observer producerProcurement, supplierQa
+
+-- | Procurement's proposal. Sales sees it and accepts from its own side;
+-- Production sees it because it is what it will be asked to make.
+template PurchaseOrder
+  with
+    producerProcurement : Party
+    producerQa : Party
+    supplierSales : Party
+    supplierProduction : Party
+    orderNumber : Text
+    materialId : Text
+    quantity : Int
+    unit : Text
+    requiredBy : Date
+  where
+    signatory producerProcurement
+    observer producerQa, supplierSales, supplierProduction
+
+    choice AcceptOrder : ContractId SupplierAcceptance
+      with
+        acceptedAt : Time
+      controller supplierSales
+      do
+        create SupplierAcceptance with
+          producerProcurement = producerProcurement
+          producerQa = producerQa
+          supplierSales = supplierSales
+          supplierProduction = supplierProduction
+          orderNumber = orderNumber
+          materialId = materialId
+          quantity = quantity
+          unit = unit
+          acceptedAt = acceptedAt
+
+-- | Signed by Procurement AND Sales, which is the contract the whole fixture
+-- turns on: two people in two organizations on two participants.
+template SupplierAcceptance
+  with
+    producerProcurement : Party
+    producerQa : Party
+    supplierSales : Party
+    supplierProduction : Party
+    orderNumber : Text
+    materialId : Text
+    quantity : Int
+    unit : Text
+    acceptedAt : Time
+  where
+    signatory producerProcurement, supplierSales
+    observer producerQa, supplierProduction
+
+    nonconsuming choice RecordLot : ContractId ProductionLot
+      with
+        lotNumber : Text
+        manufacturedOn : Date
+        expiresOn : Date
+        supplierQa : Party
+        supplierShipping : Party
+        producerReceiving : Party
+      controller supplierProduction
+      do
+        create ProductionLot with
+          supplierProduction = supplierProduction
+          supplierQa = supplierQa
+          supplierShipping = supplierShipping
+          producerQa = producerQa
+          producerReceiving = producerReceiving
+          orderNumber = orderNumber
+          lotNumber = lotNumber
+          materialId = materialId
+          quantity = quantity
+          unit = unit
+          manufacturedOn = manufacturedOn
+          expiresOn = expiresOn
+
+-- | What Production made. The producer's side watches it and cannot change it.
+template ProductionLot
+  with
+    supplierProduction : Party
+    supplierQa : Party
+    supplierShipping : Party
+    producerQa : Party
+    producerReceiving : Party
+    orderNumber : Text
+    lotNumber : Text
+    materialId : Text
+    quantity : Int
+    unit : Text
+    manufacturedOn : Date
+    expiresOn : Date
+  where
+    signatory supplierProduction
+    observer supplierQa, supplierShipping, producerQa, producerReceiving
+
+    nonconsuming choice IssueCoa : ContractId CertificateOfAnalysis
+      with
+        certificateNumber : Text
+        issuedAt : Time
+        tests : [QualityTest]
+      controller supplierQa
+      do
+        create CertificateOfAnalysis with
+          supplierQa = supplierQa
+          supplierShipping = supplierShipping
+          producerQa = producerQa
+          producerReceiving = producerReceiving
+          lotNumber = lotNumber
+          certificateNumber = certificateNumber
+          issuedAt = issuedAt
+          tests = tests
+
+-- | The supplier's quality assertion about the lot, signed by the person who
+-- made it. Never consumed: it is a fact.
+template CertificateOfAnalysis
+  with
+    supplierQa : Party
+    supplierShipping : Party
+    producerQa : Party
+    producerReceiving : Party
+    lotNumber : Text
+    certificateNumber : Text
+    issuedAt : Time
+    tests : [QualityTest]
+  where
+    signatory supplierQa
+    observer supplierShipping, producerQa, producerReceiving
+
+    nonconsuming choice Ship : ContractId Shipment
+      with
+        shipmentNumber : Text
+        shippedAt : Time
+        carrier : Text
+      controller supplierShipping
+      do
+        create Shipment with
+          supplierShipping = supplierShipping
+          supplierQa = supplierQa
+          producerQa = producerQa
+          producerReceiving = producerReceiving
+          lotNumber = lotNumber
+          certificateNumber = certificateNumber
+          shipmentNumber = shipmentNumber
+          shippedAt = shippedAt
+          carrier = carrier
+
+-- | In transit. CONSUMED on receipt, so the current state moves with the
+-- material and a trail is left behind it.
+template Shipment
+  with
+    supplierShipping : Party
+    supplierQa : Party
+    producerQa : Party
+    producerReceiving : Party
+    lotNumber : Text
+    certificateNumber : Text
+    shipmentNumber : Text
+    shippedAt : Time
+    carrier : Text
+  where
+    signatory supplierShipping
+    observer supplierQa, producerQa, producerReceiving
+
+    choice Receive : ContractId MaterialReceipt
+      with
+        receivedAt : Time
+        sealIntact : Bool
+      controller producerReceiving
+      do
+        create MaterialReceipt with
+          producerReceiving = producerReceiving
+          producerQa = producerQa
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          shipmentNumber = shipmentNumber
+          receivedAt = receivedAt
+          sealIntact = sealIntact
+
+-- | Receiving's own assertion about what arrived. `receivedBy` is gone: the
+-- person who received it is the SIGNATORY now, which is the point of a party
+-- per actual user - it was a Text field saying what the ledger can prove.
+template MaterialReceipt
+  with
+    producerReceiving : Party
+    producerQa : Party
+    supplierQa : Party
+    lotNumber : Text
+    shipmentNumber : Text
+    receivedAt : Time
+    sealIntact : Bool
+  where
+    signatory producerReceiving
+    observer producerQa, supplierQa
+
+    nonconsuming choice Inspect : ContractId IncomingInspection
+      with
+        inspectionNumber : Text
+        inspectedAt : Time
+        tests : [QualityTest]
+        conforms : Bool
+        remark : Optional Text
+        producerManufacturing : Party
+      controller producerQa
+      do
+        create IncomingInspection with
+          producerQa = producerQa
+          producerReceiving = producerReceiving
+          producerManufacturing = producerManufacturing
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          inspectionNumber = inspectionNumber
+          inspectedAt = inspectedAt
+          tests = tests
+          conforms = conforms
+          remark = remark
+
+-- | Quality Assurance's independent results, beside the supplier's. The
+-- supplier's QA reads them, which is the half of the story neither
+-- organization holds alone.
+template IncomingInspection
+  with
+    producerQa : Party
+    producerReceiving : Party
+    producerManufacturing : Party
+    supplierQa : Party
+    lotNumber : Text
+    inspectionNumber : Text
+    inspectedAt : Time
+    tests : [QualityTest]
+    conforms : Bool
+    remark : Optional Text
+  where
+    signatory producerQa
+    observer producerReceiving, producerManufacturing, supplierQa
+
+    nonconsuming choice ReleaseForProduction : ContractId MaterialRelease
+      with
+        releaseNumber : Text
+        releasedAt : Time
+      controller producerQa
+      do
+        create MaterialRelease with
+          producerQa = producerQa
+          producerManufacturing = producerManufacturing
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          inspectionNumber = inspectionNumber
+          releaseNumber = releaseNumber
+          releasedAt = releasedAt
+
+    nonconsuming choice QuarantineLot : ContractId Quarantine
+      with
+        quarantineNumber : Text
+        quarantinedAt : Time
+        reason : Text
+      controller producerQa
+      do
+        create Quarantine with
+          producerQa = producerQa
+          producerReceiving = producerReceiving
+          producerManufacturing = producerManufacturing
+          lotNumber = lotNumber
+          inspectionNumber = inspectionNumber
+          quarantineNumber = quarantineNumber
+          quarantinedAt = quarantinedAt
+          reason = reason
+
+-- | The end of Story 1. Manufacturing may now use the material and the
+-- supplier's QA sees that it was released - neither organization holds the
+-- whole history alone. `releasedBy` is gone for the reason `receivedBy` is.
+template MaterialRelease
+  with
+    producerQa : Party
+    producerManufacturing : Party
+    supplierQa : Party
+    lotNumber : Text
+    inspectionNumber : Text
+    releaseNumber : Text
+    releasedAt : Time
+  where
+    signatory producerQa
+    observer producerManufacturing, supplierQa
+-- | THE PRODUCER'S OWN, AND NOBODY ELSE'S. Story 2's divergence starts here
+-- and `fixture_pharma.md` asks for exactly this: "Some information should be
+-- visible only to the organization that created or owns it".
+--
+-- NO SUPPLIER PARTY IS NAMED, which is the whole point. A lot held back is an
+-- internal decision until the producer chooses to raise it, and until
+-- `RaiseDeviation` the supplier's participant does not know this contract
+-- exists. It is the first contract in this fixture that the two organizations
+-- do not both see, and it is what makes the Workbench show two different
+-- ledgers side by side.
+template Quarantine
+  with
+    producerQa : Party
+    producerReceiving : Party
+    producerManufacturing : Party
+    lotNumber : Text
+    inspectionNumber : Text
+    quarantineNumber : Text
+    quarantinedAt : Time
+    reason : Text
+  where
+    signatory producerQa
+    observer producerReceiving, producerManufacturing
+
+    -- | The supplier is named HERE rather than carried on the quarantine,
+    -- because a field naming them would put them on the contract and there
+    -- would be nothing private about it.
+    nonconsuming choice RaiseDeviation : ContractId Deviation
+      with
+        deviationNumber : Text
+        raisedAt : Time
+        description : Text
+        producerResult : QualityTest
+        supplierQa : Party
+      controller producerQa
+      do
+        create Deviation with
+          producerQa = producerQa
+          producerManufacturing = producerManufacturing
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          quarantineNumber = quarantineNumber
+          deviationNumber = deviationNumber
+          raisedAt = raisedAt
+          description = description
+          producerResult = producerResult
+
+    -- | The end of the lot's quarantine, and the one CONSUMING step of Story
+    -- 2. The disposition it closes against is named BY CONTRACT ID, so the
+    -- archived quarantine points at what resolved it rather than repeating it.
+    choice CloseQuarantine : ()
+      with
+        closedAt : Time
+        disposition : ContractId Disposition
+      controller producerQa
+      do
+        return ()
+
+-- | Raised TO the supplier: the producer's disagreement, with the measurement
+-- under it. Signed by the producer alone - an assertion the supplier cannot
+-- alter - and observed by the supplier's Quality Assurance, who answers it.
+template Deviation
+  with
+    producerQa : Party
+    producerManufacturing : Party
+    supplierQa : Party
+    lotNumber : Text
+    quarantineNumber : Text
+    deviationNumber : Text
+    raisedAt : Time
+    description : Text
+    producerResult : QualityTest
+  where
+    signatory producerQa
+    observer producerManufacturing, supplierQa
+
+    nonconsuming choice Respond : ContractId SupplierResponse
+      with
+        respondedAt : Time
+        note : Text
+        evidence : ResponseEvidence
+      controller supplierQa
+      do
+        create SupplierResponse with
+          supplierQa = supplierQa
+          producerQa = producerQa
+          lotNumber = lotNumber
+          deviationNumber = deviationNumber
+          respondedAt = respondedAt
+          note = note
+          evidence = evidence
+
+-- | The supplier's answer, signed by the supplier - which is the half of the
+-- history the producer cannot write.
+--
+-- A NOTE AND A VARIANT, where there were three loose fields. Two Optionals
+-- beside a Text said a supplier might answer with both, neither or either, and
+-- what `fixture_pharma.md` describes is ONE answer of a known kind. The note
+-- is the covering sentence and is always there; `evidence` is what was
+-- actually offered.
+template SupplierResponse
+  with
+    supplierQa : Party
+    producerQa : Party
+    lotNumber : Text
+    deviationNumber : Text
+    respondedAt : Time
+    note : Text
+    evidence : ResponseEvidence
+  where
+    signatory supplierQa
+    observer producerQa
+
+    nonconsuming choice OrderRetest : ContractId Retest
+      with
+        retestNumber : Text
+        retestedAt : Time
+        tests : [QualityTest]
+        conforms : Bool
+        conditions : TextMap Text
+      controller producerQa
+      do
+        create Retest with
+          producerQa = producerQa
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          deviationNumber = deviationNumber
+          retestNumber = retestNumber
+          retestedAt = retestedAt
+          tests = tests
+          conforms = conforms
+          conditions = conditions
+
+-- | The producer testing again, with the supplier's answer in hand. Its
+-- results are what the disposition is taken against.
+--
+-- `conditions` IS A MAP, and it is here because a retest is the one record in
+-- the fixture whose circumstances matter as much as its numbers - which
+-- instrument, which operator, which method. MEASURED 2026-09-22: a `TextMap`
+-- goes as a JSON OBJECT and an array of pairs is refused with `Expected
+-- ujson.Obj`.
+template Retest
+  with
+    producerQa : Party
+    supplierQa : Party
+    lotNumber : Text
+    deviationNumber : Text
+    retestNumber : Text
+    retestedAt : Time
+    tests : [QualityTest]
+    conforms : Bool
+    conditions : TextMap Text
+  where
+    signatory producerQa
+    observer supplierQa
+
+    -- | Manufacturing is a CHOICE ARGUMENT rather than a field of this
+    -- contract: the retest is a quality record and has no reason to name the
+    -- people who will or will not receive the material.
+    nonconsuming choice Dispose : ContractId Disposition
+      with
+        dispositionNumber : Text
+        decidedAt : Time
+        outcome : DispositionOutcome
+        rationale : Text
+        producerManufacturing : Party
+      controller producerQa
+      do
+        create Disposition with
+          producerQa = producerQa
+          producerManufacturing = producerManufacturing
+          supplierQa = supplierQa
+          lotNumber = lotNumber
+          deviationNumber = deviationNumber
+          dispositionNumber = dispositionNumber
+          decidedAt = decidedAt
+          outcome = outcome
+          rationale = rationale
+
+-- | How Story 2 ends. The producer decides and the supplier reads it, which
+-- is the shape every quality decision in this fixture has.
+--
+-- `outcome` IS THE ENUM now - 2026-09-22, once `types_probe.py` had measured
+-- what one looks like inbound. It was Text carrying one of the five names,
+-- which is a comment where a type belongs.
+template Disposition
+  with
+    producerQa : Party
+    producerManufacturing : Party
+    supplierQa : Party
+    lotNumber : Text
+    deviationNumber : Text
+    dispositionNumber : Text
+    decidedAt : Time
+    outcome : DispositionOutcome
+    rationale : Text
+  where
+    signatory producerQa
+    observer producerManufacturing, supplierQa

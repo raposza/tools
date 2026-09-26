@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+
+  Everything that knows what Canton is: installations, versions, editions,
+  configuration and overlays, node launching, PQS/scribe.
+
+  PQS lives here and not in the sandbox. Scribe attaches to a PARTICIPANT, not
+  to a sandbox topology, and a second stack family - LocalNet, or a remote node
+  - would want it identically.
+
+  Holds `canton.install`: what Canton and PQS are
+  present on this machine, which version, which edition, from which installer.
+  The rule below preceded the code, which is the point of the ordering.
+  S-1 from the parent still applies: this module launches processes and writes
+  HOCON, and must not declare a Canton, Daml-LF, protobuf or gRPC dependency.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+    </parent>
+
+    <artifactId>raposza-canton</artifactId>
+    <name>raposza-canton</name>
+
+    <dependencies>
+        <!-- The FIRST declared edge out of this module, and it arrived
+             with pqs/ rather than with the module.
+             ScribeProcess supervises an external binary and ScribeTables
+             bootstraps a schema, so this module now needs ManagedProcess and
+             PostgresCoordinates. Nothing in raposza-runtime knows what
+             Canton is, which is the direction the enforcer rules hold: the
+             runtime's own pom refuses a dependency back on this one. It was
+             NOT declared in increment 5, when the README already promised it,
+             because a pom that declares what nothing imports is the same
+             unenforced comment. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Arrived with topology/. AuthOverlay
+             renders a participant's auth-services block from an AuthPlan, and
+             the plan type is raposza-auth's. This module does not mint or
+             verify a token - it writes the configuration that tells Canton
+             where to find a key. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The install package brought
+             two dependencies with it, and T-5 a third. Everything else it uses is
+             the JDK: zip, regex, filesystem walks. Nothing here is a Canton,
+             Daml-LF, protobuf or gRPC artefact, so S-1 is untouched. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <!-- DpmVersions reads dpm's JSON bundle listing with a JSON parser,
+             not a regex that skipped nested objects. Version managed in
+             platform/pom.xml with core and annotations beside it. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- Compile scope, not runtime: WinPgDataSource EXTENDS
+             PGSimpleDataSource. Only its class file leaves this reactor - it
+             is handed to the Canton JVM, whose own jar carries the driver. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>s2-canton-declares-no-sandbox</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>false</searchTransitive>
+                                    <excludes>
+                                        <exclude>com.raposza:raposza-sandbox</exclude>
+                                        <exclude>com.raposza:raposza-localnet</exclude>
+                                    </excludes>
+                                    <message>S-2: raposza-canton sits above the runtime and below the sandbox, and must not declare a dependency on raposza-sandbox or raposza-localnet. A class that mentions a sandbox topology, a persistence mode or a CaQL fixture belongs in raposza-sandbox.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

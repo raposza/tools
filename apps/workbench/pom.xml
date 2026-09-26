@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) 2026 bentzn
+  SPDX-License-Identifier: Apache-2.0
+  Author Claude/bentzn
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.raposza</groupId>
+        <artifactId>raposza-platform</artifactId>
+        <version>0.4.0</version>
+        <relativePath>../../platform/pom.xml</relativePath>
+    </parent>
+
+    <artifactId>workbench</artifactId>
+    <name>workbench</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-spi</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Token sources and the per-profile settings file. The GUI is where
+             a profile is selected, so it is where a profile becomes a token. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-resolve</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-render</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The fixture language. This module is the ASSEMBLY: it is the only
+             one that knows both a Ledger API generation and a catalogue, which
+             is what a headless run needs and what the language deliberately
+             does not have. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>caql-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-cache</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- The front end assembles cache + decoder + registry, because a
+             client module knows a Ledger API generation and nothing about
+             Daml-LF. This is also where the reader's Scala runtime enters the
+             shaded launcher jar - about 48 MB - so a change here is a change to
+             what `-Papp` produces. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-lf</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- RUNTIME scope, and BOTH generations. This module names no class
+             from a target: it asks raposza-spi for the ones registered through
+             META-INF/services. That is the whole point of the SPI split - an
+             application that names Lapi1Client is an application that has to
+             be edited to support a Canton version.
+
+             Two targets on one classpath was IMPOSSIBLE until 2026-08-24. The
+             306-name collision behind that rule was between
+             com.daml:bindings-java and the Canton jar; raposza-target-3x now
+             carries NEITHER, because it speaks v2 through descriptors the
+             participant serves. Nothing they hold overlaps, so the constraint
+             was a fact about the vendor jars rather than about the
+             generations.
+
+             What that leaves is a CHOICE rather than a collision, and the
+             window makes it per participant from the Sandbox discovery
+             document. See docs/architecture.md section 2. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-target-2x</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-target-3x</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>${flatlaf.version}</version>
+        </dependency>
+        <!-- Inter, Hack and the tokens - D-848, todo.md DS-8. -->
+        <dependency>
+            <groupId>com.raposza.design</groupId>
+            <artifactId>raposza-design</artifactId>
+        </dependency>
+        <!-- No SVG renderer at run time. The icon is exported at build,
+             by raposza-design-maven-plugin below. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+        </dependency>
+    </dependencies>
+
+    <!-- THE WINDOW ICON, EXPORTED AT BUILD - D-848, todo.md DS-8.
+         src/main/svg/icon.svg is the master, its text converted to
+         paths so the render depends on no installed font. The PNG is
+         written into the classes directory, where the jar and the
+         shaded -app jar pick it up; no PNG is committed. -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.raposza.design</groupId>
+                <artifactId>raposza-design-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>icon</id>
+                        <goals>
+                            <goal>export-png</goal>
+                        </goals>
+                        <configuration>
+                            <source>${project.basedir}/src/main/svg/icon.svg</source>
+                            <target>${project.build.outputDirectory}/icon.png</target>
+                            <size>512</size>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- The launcher jar is built ON REQUEST, not on every build.
+
+         Shading costs several seconds and produces a 40-megabyte artifact, and
+         test.sh reaches the package phase on every run. Binding it to the
+         default lifecycle would tax every test run for an artifact almost none
+         of them want. run.sh asks for it with -Papp.
+
+         The shaded jar is ATTACHED with a classifier rather than replacing the
+         module jar: nothing depends on workbench, but replacing a
+         module's own artifact with a fat one is the kind of surprise that
+         costs an afternoon when something eventually does. -->
+    <profiles>
+        <profile>
+            <id>app</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-shade-plugin</artifactId>
+                        <version>${maven.shade.version}</version>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>shade</goal>
+                                </goals>
+                                <configuration>
+                                    <createDependencyReducedPom>false</createDependencyReducedPom>
+                                    <shadedArtifactAttached>true</shadedArtifactAttached>
+                                    <shadedClassifierName>app</shadedClassifierName>
+                                    <filters>
+                                        <filter>
+                                            <artifact>*:*</artifact>
+                                            <excludes>
+                                                <!-- Signed jars: a signature
+                                                     that no longer matches its
+                                                     contents makes the JVM
+                                                     refuse the whole jar. -->
+                                                <exclude>META-INF/*.SF</exclude>
+                                                <exclude>META-INF/*.DSA</exclude>
+                                                <exclude>META-INF/*.RSA</exclude>
+                                                <exclude>META-INF/INDEX.LIST</exclude>
+                                                <!-- Several dependencies each
+                                                     carry one; a fat jar can
+                                                     hold at most the one it is
+                                                     not using. -->
+                                                <exclude>module-info.class</exclude>
+                                                <exclude>META-INF/versions/*/module-info.class</exclude>
+                                            </excludes>
+                                        </filter>
+                                    </filters>
+                                    <transformers>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                            <mainClass>com.raposza.gui.WorkbenchApp</mainClass>
+                                        </transformer>
+                                        <!-- gRPC finds its transport through
+                                             ServiceLoader. Without this the
+                                             service files overwrite each other
+                                             and the channel cannot be built at
+                                             runtime - a failure that only
+                                             appears from the jar, never from
+                                             the reactor. -->
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                        <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                            <resource>META-INF/io.netty.versions.properties</resource>
+                                        </transformer>
+                                    </transformers>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>
