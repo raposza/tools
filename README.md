@@ -51,8 +51,6 @@ Then, in a second terminal:
 Choose **a local Sandbox** to connect the Workbench to the Sandbox that is
 running.
 
-![The Workbench on that Sandbox, a CaQL query and its result](docs/images/workbench-caql-aviation.png)
-
 `./run-sandbox.sh --cli` starts the same stack in the terminal instead of the
 window. `./run-sandbox.sh --help` lists every argument.
 
