@@ -36,9 +36,9 @@ and no backports; a fix arrives as a new version.
 
 ## When this was last reviewed
 
-**Reviewed 2026-09-26 for 0.4.0**, against the tree as it then stood -
+**Reviewed 2026-09-27 for 0.4.1**, against the tree as it then stood -
 `docs/security-review.md` carries the result. The first review was
-2026-09-25.
+2026-09-25, the second 2026-09-26 for 0.4.0.
 
 ## The short statement of the model
 

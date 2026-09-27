@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
+import com.raposza.runtime.settings.RaposzaSettings;
+
 /**
  * Which Splice bundles this machine has, read off the filesystem.
  *
@@ -21,6 +23,12 @@ import java.util.stream.Stream;
  * `canton_inventory.md` section 694 lists the bundles staged there. The layout
  * is the vendor's own: the release tarball unpacks to `splice-node/`, so the
  * version is the directory ABOVE it.
+ *
+ * <b>`dir.splice` moves the bundles and nothing else - todo.md A-45.</b> A
+ * directory set there is where they are looked for and where a download from
+ * the window lands, laid out the same way. LocalNetND's run directory
+ * {@link #STR_DIR_RUN} stays under `~/.splice` whatever it says - the
+ * operator's answer of 2026-09-27 - so it hangs off {@link #dirRootDefault()}.
  *
  * <h2>The test is the launcher, not the directory name</h2>
  *
@@ -98,9 +106,19 @@ public final class SpliceInstallations {
 
 
     /**
-     * @return the root the versions sit under
+     * @return the root the versions sit under: `dir.splice` when it is set,
+     *         else {@link #dirRootDefault()}
      */
     public static Path dirRoot() {
+        Path dirSet = RaposzaSettings.current().dirSplice();
+        return dirSet != null ? dirSet : dirRootDefault();
+    }
+
+
+    /**
+     * @return `~/.splice`, which the run directory stays under
+     */
+    public static Path dirRootDefault() {
         return Path.of(System.getProperty("user.home"), STR_DIR);
     }
 

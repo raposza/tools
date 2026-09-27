@@ -11,7 +11,7 @@
   <parent>
     <groupId>com.raposza</groupId>
     <artifactId>raposza-platform</artifactId>
-    <version>0.4.0</version>
+    <version>0.4.1</version>
   </parent>
   <artifactId>raposza-bom</artifactId>
   <packaging>pom</packaging>

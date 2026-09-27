@@ -170,9 +170,11 @@ public final class SettingsPane extends JPanel {
         addCard(pnlStack, 1, GuiTheme.card("Ports and defaults", pnlValues()));
         addCard(pnlStack, 2, GuiTheme.card("Test data", pnlFixture()));
         addCard(pnlStack, 3, GuiTheme.card("Founding snapshot", pnlFounding()));
+        // AT THE BOTTOM - operator instruction, 2026-09-26, todo.md A-45.
+        addCard(pnlStack, 4, GuiTheme.card("Installations", pnlInstallations()));
         GridBagConstraints gbcFill = new GridBagConstraints();
         gbcFill.gridx = 0;
-        gbcFill.gridy = 4;
+        gbcFill.gridy = 5;
         gbcFill.weightx = 1.0;
         gbcFill.weighty = 1.0;
         gbcFill.fill = GridBagConstraints.BOTH;
@@ -383,6 +385,10 @@ public final class SettingsPane extends JPanel {
                     .setText(Integer.toString(settings.nSecondsReady()));
             chkOfferAviation.setSelected(settings.flagOfferAviation());
             chkOfferPharma.setSelected(settings.flagOfferPharma());
+            mapField.get(RaposzaSettings.STR_KEY_DIR_DAML).setText(strOfDir(settings.dirDaml()));
+            mapField.get(RaposzaSettings.STR_KEY_DIR_DPM).setText(strOfDir(settings.dirDpm()));
+            mapField.get(RaposzaSettings.STR_KEY_DIR_SPLICE)
+                    .setText(strOfDir(settings.dirSplice()));
         }
         finally {
             flagLoading = false;
@@ -414,7 +420,10 @@ public final class SettingsPane extends JPanel {
                 chkOfferAviation.isSelected(),
                 chkOfferPharma.isSelected(),
                 RaposzaSettings.current().strUrlOidc(),
-                nOf(RaposzaSettings.STR_KEY_PORT_UI_FIRST, "First web UI port"));
+                nOf(RaposzaSettings.STR_KEY_PORT_UI_FIRST, "First web UI port"),
+                dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DAML, "DAML Assistant directory"),
+                dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DPM, "DPM directory"),
+                dirOptionalOf(RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory"));
     }
 
 
@@ -550,6 +559,23 @@ public final class SettingsPane extends JPanel {
     }
 
 
+    /**
+     * THREE INSTALLATIONS THIS APPLICATION DOES NOT OWN - todo.md A-45. Each
+     * points at one that already exists, a developer's own or a corporate
+     * install directory; blank is the default. The installers do not follow
+     * them.
+     */
+    private JPanel pnlInstallations() {
+        JPanel pnl = new JPanel(new GridBagLayout());
+        pnl.setOpaque(false);
+        int nRow = 0;
+        nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_DAML, "DAML Assistant directory");
+        nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_DPM, "DPM directory");
+        addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory");
+        return pnl;
+    }
+
+
     private JPanel pnlFounding() {
         JPanel pnl = new JPanel(new GridBagLayout());
         pnl.setOpaque(false);
@@ -646,6 +672,23 @@ public final class SettingsPane extends JPanel {
     }
 
 
+    /**
+     * @param strKey the field's key
+     * @param strLabel its label, for the refusal
+     * @return the path, or null when the field is blank - the default
+     */
+    private Path dirOptionalOf(String strKey, String strLabel) {
+        if (mapField.get(strKey).getText().trim().isEmpty())
+            return null;
+        return dirOf(strKey, strLabel);
+    }
+
+
+    private static String strOfDir(Path dir) {
+        return dir == null ? "" : dir.toString();
+    }
+
+
     private int nOf(String strKey, String strLabel) {
         String strVal = mapField.get(strKey).getText().trim();
         try {
@@ -702,6 +745,17 @@ public final class SettingsPane extends JPanel {
 
     JTextField fieldOf(String strKey) {
         return mapField.get(strKey);
+    }
+
+
+    /**
+     * Stops a save the settle timer still holds, for tests. A timer that
+     * fires after a test has put the settings file back writes the test's
+     * fields into the operator's own file - measured at his console,
+     * 2026-09-27.
+     */
+    void cancelPendingSave() {
+        timerSettle.stop();
     }
 
 

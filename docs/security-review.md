@@ -4,10 +4,18 @@
 
 **This is a REVIEW, not an audit.** It was written by the people who wrote the
 code, from a static reading of this tree on 2026-09-25, read again on
-2026-09-26 against the tree released as 0.4.0. Nothing in it was
+2026-09-26 against the tree released as 0.4.0, and on 2026-09-27 for 0.4.1.
+Nothing in it was
 established by a third party, and no third party has signed anything about it.
 When an external audit exists it will be published beside this document,
 unedited.
+
+**Reviewed 2026-09-27 for 0.4.1.** The changes since 0.4.0 were read against
+the tree: section 4 now carries the three installation directories the
+Settings tab writes, and section 10 the release workflow and its
+`SHA256SUMS`; section 10's statement that the tree's version is a `-SNAPSHOT`
+between releases was false at 0.4.0 and is removed. The rest stands as
+reviewed for 0.4.0.
 
 **Reviewed 2026-09-26 for 0.4.0.** The first review of this repository was
 2026-09-25; the second reading, for the release, corrected section 9's
@@ -183,7 +191,7 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 
 | path | contents | permissions |
 | --- | --- | --- |
-| `settings.properties` | ports, directories, the external provider's URL | umask |
+| `settings.properties` | ports, directories - its own, and the Daml Assistant, DPM and Splice installations when they are set - the external provider's URL | umask |
 | `profiles/<version>-<edition>.properties` (Sandbox) | the form, INCLUDING the HMAC shared secret, `auth.secret`, in clear | umask |
 | `profiles/<name>.properties` (Workbench) | the auth mode and, ONLY if the user ticks "save", a bearer token in clear | **`rw-------`**, set after the write |
 | `audit.jsonl` | one line per CaQL submission | **`rw-------`** at creation |
@@ -198,8 +206,10 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 The embedded PostgreSQL's binaries are unpacked into `java.io.tmpdir`, or,
 when that fails, into `raposza-tmp` beside the Sandbox jar (`SandboxPostgres`).
 
-`~/.splice/` holds the downloaded Splice bundles and, by default, LocalNetND's
-run directory `~/.splice/native-localnet`: its PostgreSQL cluster, the staged
+`~/.splice/` holds the downloaded Splice bundles - or the Settings tab's
+Splice directory does, when it is set - and, by default, LocalNetND's run
+directory `~/.splice/native-localnet`, which does not move with that setting:
+its PostgreSQL cluster, the staged
 configuration - which carries `secret = "unsafe"` - per-process logs,
 `web.log` rotated at 10 MB, and while it runs `localnet.properties`, which
 carries the database password, the HS256 secret and a signed token with no
@@ -316,8 +326,9 @@ user's home - and no port below 1024 is bound. `/etc/hosts` is never written;
 LocalNetND prints the lines it would like there and leaves them to the user.
 
 `build.sh` and `test.sh` write into `target/` and the local Maven repository.
-The Sandbox writes `~/.splice` when LocalNetND is chosen or a Splice
-bundle is installed - section 4.
+The Sandbox writes `~/.splice` when LocalNetND is chosen, and `~/.splice` or
+the Settings tab's Splice directory when a Splice bundle is installed -
+section 4.
 
 
 ## 9 - What third-party code is present
@@ -355,17 +366,28 @@ No dependency vulnerability scan has been run - section 13.
 
 ## 10 - How a release is built, and how a consumer verifies it
 
-This repository is released as a tagged source tree on GitHub. **No artefact
-of it is deployed to a Maven repository, and nothing is signed** - there is no
-release profile and no signing plugin in any pom, and the tag is not a signed
-tag. A consumer builds it from source, which is what `BUILD_AND_INSTALL.md`
-describes.
+This repository is released as a tagged source tree on GitHub. From 0.4.1,
+publishing a GitHub Release on a tag runs `.github/workflows/release.yml` from
+that tagged commit: on a GitHub-hosted runner it checks that the tag names the
+pom version, runs `test.sh`, and attaches `sandbox-<version>-app.jar`,
+`workbench-<version>-app.jar` and `SHA256SUMS` to the Release. The workflow
+holds `contents: write` and the run's own token, nothing else. It uses
+`actions/checkout@v7` and `actions/setup-java@v6` by their major tags, not
+pinned to a commit, so what those two actions are is whatever their owners
+last published under the tag.
+
+**No artefact of it is deployed to a Maven repository, and nothing is signed**
+- there is no release profile and no signing plugin in any pom, the tag is
+not a signed tag, and the jars carry no signature. `SHA256SUMS` is written by
+the same run that uploads the jars, so it shows that a download is intact; it
+cannot show that the jars on the Release are the ones that run built, because
+whoever can replace the jars can replace the file. A consumer who needs more
+builds from source, which is what `BUILD_AND_INSTALL.md` describes.
 
 What a consumer can check is therefore the source and the build's own inputs:
 every dependency is resolved by Maven with the repository's checksums, and the
 Raposza dependencies and the build plugin are published under `com.raposza` with their own
-signatures. The version in the tree is a `-SNAPSHOT` at all times except at the
-moment of a release.
+signatures.
 
 
 ## 11 - Known limitations

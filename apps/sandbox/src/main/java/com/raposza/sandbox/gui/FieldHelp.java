@@ -139,6 +139,15 @@ public final class FieldHelp {
      */
     public static final String KEY_SET_DIR_HOME = "dir.home";
 
+    /** Settings tab. An existing Daml Assistant - todo.md A-45. */
+    public static final String KEY_SET_DIR_DAML = "dir.daml";
+
+    /** Settings tab. An existing DPM - todo.md A-45. */
+    public static final String KEY_SET_DIR_DPM = "dir.dpm";
+
+    /** Settings tab. Existing Splice bundles - todo.md A-45. */
+    public static final String KEY_SET_DIR_SPLICE = "dir.splice";
+
     public static final String KEY_SET_PORT_MINT = "port.mint";
 
     /** Settings tab. This application's own; no vendor documents it. */
@@ -471,6 +480,43 @@ public final class FieldHelp {
                 + "Moving it does NOT move what is already there. The mint will"
                 + " generate a fresh key pair at the new location, which means"
                 + " every token issued before the move stops verifying.",
+                null, null);
+
+        put(KEY_SET_DIR_DAML,
+                "An existing Daml Assistant installation to use.",
+                "For a Daml Assistant already installed where this application"
+                + " would not look - your own, or a corporate install directory."
+                + " Name its root: the directory holding bin and sdk.\n\n"
+                + "Blank uses the default: the root of the daml launcher on PATH,"
+                + " else ~/.daml, or %APPDATA%\\daml on Windows.\n\n"
+                + "A directory set here wins over PATH. It does not move where an"
+                + " install from this window lands.",
+                null, null);
+
+        put(KEY_SET_DIR_DPM,
+                "An existing DPM installation to use.",
+                "For DPM already installed where this application would not look"
+                + " - your own, or a corporate install directory. Name its root,"
+                + " the directory holding bin and cache, or the directory its dpm"
+                + " launcher sits in when the launcher is kept apart from the"
+                + " cache.\n\n"
+                + "Blank uses the default: DPM_HOME, then the root of the dpm"
+                + " launcher on PATH, else ~/.dpm, or %APPDATA%\\dpm on"
+                + " Windows.\n\n"
+                + "A root set here wins over DPM_HOME and PATH. A launcher"
+                + " directory decides only where dpm is run from, and the root"
+                + " is then found as if this were blank. It does not move where"
+                + " an install from this window lands.",
+                null, null);
+
+        put(KEY_SET_DIR_SPLICE,
+                "Where existing Splice bundles are.",
+                "One directory per Splice version beneath it, each holding the"
+                + " unpacked release: <directory>/<version>/splice-node.\n\n"
+                + "Blank uses ~/.splice, or %USERPROFILE%\\.splice on Windows.\n\n"
+                + "A Splice install from this window lands here. LocalNetND's run"
+                + " directory stays in ~/.splice/native-localnet whatever this"
+                + " says.",
                 null, null);
 
         put(KEY_SET_PORT_DISCOVERY,

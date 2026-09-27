@@ -155,7 +155,23 @@ The connection dialog offers two things:
 | --- | --- | --- |
 | settings, profiles, run directories, snapshots, fixtures | `~/.raposza` | `%APPDATA%\raposza` |
 | Workbench profiles, the CaQL audit log | `~/.raposza` | `%USERPROFILE%\.raposza` |
-| Splice bundles, LocalNetND's run directory | `~/.splice` | `%USERPROFILE%\.splice` |
+| Splice bundles | `~/.splice` | `%USERPROFILE%\.splice` |
+| LocalNetND's run directory | `~/.splice/native-localnet` | `%USERPROFILE%\.splice\native-localnet` |
+
+The Sandbox's Settings tab has three more directories at the bottom, for
+installations that already exist somewhere else - your own, or a corporate
+install directory. Blank means the default:
+
+| setting | points at | default |
+| --- | --- | --- |
+| DAML Assistant directory | the Daml Assistant's root, holding `bin` and `sdk` | the root of `daml` on `PATH`, else `~/.daml` or `%APPDATA%\daml` |
+| DPM directory | DPM's root, holding `bin` and `cache` - or the directory the `dpm` launcher sits in | `DPM_HOME`, then the root of `dpm` on `PATH`, else `~/.dpm` or `%APPDATA%\dpm` |
+| Splice directory | where the Splice bundles are, `<directory>/<version>/splice-node` | `~/.splice` or `%USERPROFILE%\.splice` |
+
+A root set there wins over `DPM_HOME` and over `PATH`; a DPM launcher
+directory decides only which `dpm` runs. The installers in the window do not follow the DAML Assistant and DPM
+directories; a Splice install does land in the Splice directory. The run
+directory stays where the table above says.
 
 To remove Raposza, delete the clone and those directories. DPM, the SDK and
 Canton are managed by DPM's own tools.

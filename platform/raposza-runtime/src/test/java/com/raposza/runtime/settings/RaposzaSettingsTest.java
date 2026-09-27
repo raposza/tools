@@ -5,6 +5,7 @@ package com.raposza.runtime.settings;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -338,7 +339,60 @@ class RaposzaSettingsTest {
                 settings.nPortDiscovery(), settings.strLine(), settings.strLauncher(),
                 settings.nPortFirst(), settings.nPortPostgres(), settings.nSecondsReady(),
                 settings.flagOfferAviation(), settings.flagOfferPharma(), settings.strUrlOidc(),
-                nPortUiFirst);
+                nPortUiFirst, settings.dirDaml(), settings.dirDpm(), settings.dirSplice());
+    }
+
+
+    /** A file from before A-45, and one with the keys blank, both mean today. */
+    @Test
+    void blank_installation_directories_are_the_default(@TempDir Path dirTmp)
+            throws IOException {
+        RaposzaSettings settings = RaposzaSettings.ofDefaults();
+        assertNull(settings.dirDaml());
+        assertNull(settings.dirDpm());
+        assertNull(settings.dirSplice());
+
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DAML, "");
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DPM, "   ");
+        RaposzaSettings settingsRead = RaposzaSettings.read(write(dirTmp, props));
+        assertNull(settingsRead.dirDaml());
+        assertNull(settingsRead.dirDpm());
+        assertNull(settingsRead.dirSplice());
+        assertEquals(RaposzaSettings.ofDefaults(), settingsRead);
+    }
+
+
+    @Test
+    void each_installation_directory_round_trips(@TempDir Path dirTmp) throws IOException {
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DAML, dirTmp.resolve("daml").toString());
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DPM, dirTmp.resolve("dpm").toString());
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_SPLICE,
+                dirTmp.resolve("splice").toString());
+        RaposzaSettings settings = RaposzaSettings.read(write(dirTmp, props));
+        assertEquals(dirTmp.resolve("daml"), settings.dirDaml());
+        assertEquals(dirTmp.resolve("dpm"), settings.dirDpm());
+        assertEquals(dirTmp.resolve("splice"), settings.dirSplice());
+
+        RaposzaSettings settingsBack = RaposzaSettings.ofProperties(settings.toProperties(),
+                RaposzaSettings.ofDefaults());
+        assertEquals(settings, settingsBack);
+        assertEquals("", RaposzaSettings.ofDefaults().toProperties()
+                .getProperty(RaposzaSettings.STR_KEY_DIR_SPLICE));
+    }
+
+
+    /** One unusable path costs its own key and no other. */
+    @Test
+    void a_nonsense_installation_directory_falls_back_per_key(@TempDir Path dirTmp)
+            throws IOException {
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DAML, "bad\u0000path");
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DPM, dirTmp.resolve("dpm").toString());
+        RaposzaSettings settings = RaposzaSettings.read(write(dirTmp, props));
+        assertNull(settings.dirDaml());
+        assertEquals(dirTmp.resolve("dpm"), settings.dirDpm());
     }
 
 

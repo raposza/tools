@@ -209,6 +209,120 @@ class ToolchainRootsTest {
     }
 
 
+    /** Nothing set is exactly the four-argument answer. */
+    @Test
+    void nothingSetIsTheOldAnswer() throws IOException {
+        Path dirRoot = dirTemp.resolve(".dpm");
+        launcher(dirRoot, "dpm", "cache");
+        String strPath = dirRoot.resolve("bin").toString();
+
+        assertEquals(ToolchainRoots.of(strPath, new HashMap<>(), false, dirTemp),
+                ToolchainRoots.of(strPath, new HashMap<>(), false, dirTemp, null, null));
+    }
+
+
+    /** "Setting wins" - over DPM_HOME and over the launcher on PATH. */
+    @Test
+    void aSetDpmRootWinsOverDpmHomeAndPath() throws IOException {
+        Path dirOnPath = dirTemp.resolve("onpath");
+        launcher(dirOnPath, "dpm", "cache");
+        Path dirSet = dirTemp.resolve("corporate");
+        launcher(dirSet, "dpm", "cache");
+        Map<String, String> mapEnv = new HashMap<>();
+        mapEnv.put("DPM_HOME", dirTemp.resolve("dpmhome").toString());
+
+        ToolchainRoots roots = ToolchainRoots.of(dirOnPath.resolve("bin").toString(), mapEnv,
+                false, dirTemp, null, dirSet);
+
+        assertEquals(dirSet, roots.dirDpm());
+        assertEquals(dirSet.resolve("bin").resolve("dpm"), roots.fileDpm());
+        assertTrue(roots.flagDpm());
+    }
+
+
+    @Test
+    void aSetDamlRootWinsOverPath() throws IOException {
+        Path dirOnPath = dirTemp.resolve("onpath");
+        launcher(dirOnPath, "daml", "sdk");
+        Path dirSet = dirTemp.resolve("corporate");
+        launcher(dirSet, "daml", "sdk");
+
+        ToolchainRoots roots = ToolchainRoots.of(dirOnPath.resolve("bin").toString(),
+                new HashMap<>(), false, dirTemp, dirSet, null);
+
+        assertEquals(dirSet, roots.dirDaml());
+        assertEquals(dirSet.resolve("bin").resolve("daml"), roots.fileDaml());
+    }
+
+
+    /** A set root with no launcher of its own still runs the one on PATH. */
+    @Test
+    void aSetRootWithoutALauncherKeepsThePathLauncher() throws IOException {
+        Path dirOnPath = dirTemp.resolve("onpath");
+        launcher(dirOnPath, "daml", "sdk");
+        Path dirSet = dirTemp.resolve("corporate");
+        Files.createDirectories(dirSet.resolve("sdk"));
+
+        ToolchainRoots roots = ToolchainRoots.of(dirOnPath.resolve("bin").toString(),
+                new HashMap<>(), false, dirTemp, dirSet, null);
+
+        assertEquals(dirSet, roots.dirDaml());
+        assertEquals(dirOnPath.resolve("bin").resolve("daml"), roots.fileDaml());
+    }
+
+
+    /** Said in the log, not replaced by the default. */
+    @Test
+    void aSetRootThatDoesNotLookLikeOneIsStillUsed() throws IOException {
+        Path dirSet = Files.createDirectories(dirTemp.resolve("empty"));
+
+        ToolchainRoots roots = ToolchainRoots.of(null, new HashMap<>(), false, dirTemp,
+                dirSet, dirSet);
+
+        assertEquals(dirSet, roots.dirDaml());
+        assertEquals(dirSet, roots.dirDpm());
+        assertFalse(roots.flagDaml());
+        assertFalse(roots.flagDpm());
+    }
+
+
+    /**
+     * WS-7, `DAML_DPM_Splice`: `dpm.exe` in a directory of its own, the cache
+     * under `%APPDATA%\dpm` with no `bin`, nothing on PATH. The setting names
+     * the launcher and the root is found as though nothing were set.
+     */
+    @Test
+    void theDpmSettingMayNameTheLaunchersOwnDirectory() throws IOException {
+        Path dirLauncher = Files.createDirectories(dirTemp.resolve("provision").resolve("bin"));
+        Files.createFile(dirLauncher.resolve("dpm.exe"));
+        Path dirAppData = dirTemp.resolve("Roaming");
+        Files.createDirectories(dirAppData.resolve("dpm").resolve("cache"));
+        Map<String, String> mapEnv = new HashMap<>();
+        mapEnv.put("APPDATA", dirAppData.toString());
+
+        ToolchainRoots roots = ToolchainRoots.of("", mapEnv, true, dirTemp, null, dirLauncher);
+
+        assertTrue(roots.flagDpm());
+        assertEquals(dirLauncher.resolve("dpm.exe"), roots.fileDpm());
+        assertEquals(dirAppData.resolve("dpm"), roots.dirDpm());
+    }
+
+
+    /** With the launcher directory set, DPM_HOME still decides the root. */
+    @Test
+    void aLauncherDirectoryLeavesTheRootToDpmHome() throws IOException {
+        Path dirLauncher = Files.createDirectories(dirTemp.resolve("tools"));
+        Files.createFile(dirLauncher.resolve("dpm"));
+        Map<String, String> mapEnv = new HashMap<>();
+        mapEnv.put("DPM_HOME", dirTemp.resolve("dpmhome").toString());
+
+        ToolchainRoots roots = ToolchainRoots.of(null, mapEnv, false, dirTemp, null,
+                dirLauncher);
+
+        assertEquals(dirLauncher.resolve("dpm"), roots.fileDpm());
+        assertEquals(dirTemp.resolve("dpmhome"), roots.dirDpm());
+    }
+
     /**
      * @param dirRoot the root to build
      * @param strLauncher the launcher's file name, extension included

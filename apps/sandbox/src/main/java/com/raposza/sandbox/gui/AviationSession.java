@@ -637,7 +637,8 @@ public final class AviationSession {
                 settingsNow.strLauncher(), settingsNow.nPortFirst(),
                 settingsNow.nPortPostgres(), settingsNow.nSecondsReady(), false,
                 settingsNow.flagOfferPharma(), settingsNow.strUrlOidc(),
-                settingsNow.nPortUiFirst());
+                settingsNow.nPortUiFirst(),
+                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice());
         try {
             RaposzaSettings.store(settingsNew);
             say.accept("The Aviation offer is off. The Settings tab turns it back on.");

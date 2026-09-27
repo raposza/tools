@@ -53,6 +53,17 @@ import org.slf4j.LoggerFactory;
  * its web UI block. NOT here: anything already keyed by version and edition, which is the
  * profile's job, and the CaQL audit log, which belongs to Workbench.
  *
+ * <h2>Three directories this application does NOT own - todo.md A-45</h2>
+ *
+ * `dir.daml`, `dir.dpm` and `dir.splice` point at installations that already
+ * exist - a developer's own, or a corporate install directory. BLANK MEANS
+ * TODAY'S DEFAULT, so a file without the three keys behaves exactly as before
+ * they existed, and a set one WINS over `DAML_HOME`, `DPM_HOME` and the
+ * launcher on PATH - the operator's answer of 2026-09-26, "Setting wins". They
+ * are held as null when unset, never as the default they stand for: the
+ * default is decided where it is used, `ToolchainRoots` and
+ * `SpliceInstallations`, from the environment of the JVM that uses it.
+ *
  * <h2>Reading never throws, writing does</h2>
  *
  * The same rule the profile store follows. A settings file that cannot be read
@@ -99,11 +110,16 @@ import org.slf4j.LoggerFactory;
  *        `todo.md` A-42. LocalNetND has no profile, so its node block takes
  *        {@link #nPortFirst} and its cluster {@link #nPortPostgres} directly;
  *        see {@link #portsLocalNet()}
+ * @param dirDaml the Daml Assistant root to use, or null for the default
+ * @param dirDpm the DPM root to use, or the directory its launcher sits in,
+ *        or null for the default
+ * @param dirSplice the directory the Splice bundles sit under, or null for
+ *        `~/.splice`
  */
 public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, String strLine,
         String strLauncher, int nPortFirst, int nPortPostgres, int nSecondsReady,
         boolean flagOfferAviation, boolean flagOfferPharma, String strUrlOidc,
-        int nPortUiFirst) {
+        int nPortUiFirst, Path dirDaml, Path dirDpm, Path dirSplice) {
 
     /** Points the whole application at another settings file. Tests use it. */
     public static final String STR_PROP_FILE = "raposza.settings";
@@ -126,6 +142,15 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
     public static final String STR_KEY_DIR_HOME = "dir.home";
 
     public static final String STR_KEY_PORT_MINT = "port.mint";
+
+    /** An existing Daml Assistant root; blank for the default. */
+    public static final String STR_KEY_DIR_DAML = "dir.daml";
+
+    /** An existing DPM root, or its launcher's directory; blank for the default. */
+    public static final String STR_KEY_DIR_DPM = "dir.dpm";
+
+    /** Where existing Splice bundles sit, `<dir>/<version>/splice-node`; blank for `~/.splice`. */
+    public static final String STR_KEY_DIR_SPLICE = "dir.splice";
 
     /**
      * An EXTERNAL OpenID Provider's base url, or empty to start one.
@@ -256,7 +281,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
 
 
     /**
-     * The eight-component form, which takes the defaults for the last four.
+     * The eight-component form, which takes the defaults for the last seven.
      *
      * IT EXISTS SO A COMPONENT COULD BE ADDED WITHOUT REWRITING EVERY CALLER.
      * A caller with no opinion about the fixture offer or about an external
@@ -268,8 +293,10 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
      * into a child process on the next settings write, with nothing on screen
      * saying so. The same holds for `nPortUiFirst`, added 2026-09-23: an
      * eleven-component form would put a moved web UI block back on 31000 at
-     * the next unrelated write. The compiler is the only thing that reliably
-     * catches that, so the overloads it would need are not written.
+     * the next unrelated write, and for the three installation directories,
+     * added 2026-09-27: a shorter form would forget a corporate install on the
+     * next save. The compiler is the only thing that reliably catches that,
+     * so the overloads it would need are not written.
      *
      * @param dirHome the one directory everything else hangs under
      * @param nPortMint the port the JWT mint binds
@@ -284,7 +311,8 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
             String strLauncher, int nPortFirst, int nPortPostgres, int nSecondsReady) {
         this(dirHome, nPortMint, nPortDiscovery, strLine, strLauncher, nPortFirst,
                 nPortPostgres, nSecondsReady, FLAG_OFFER_AVIATION_DEFAULT,
-                FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT);
+                FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
+                null, null, null);
     }
 
 
@@ -302,6 +330,9 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         // make two spellings of one provider. Every url this application
         // composes appends a path to it.
         strUrlOidc = strUrlNormalised(strUrlOidc);
+        dirDaml = dirOptional(dirDaml);
+        dirDpm = dirOptional(dirDpm);
+        dirSplice = dirOptional(dirSplice);
         if (nSecondsReady < 1)
             throw new IllegalArgumentException(STR_KEY_SECONDS_READY + " must be at least 1: "
                     + nSecondsReady);
@@ -369,7 +400,8 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 N_PORT_DISCOVERY_DEFAULT, STR_LINE_DEFAULT, STR_LAUNCHER_DEFAULT,
                 N_PORT_FIRST_DEFAULT, N_PORT_POSTGRES_DEFAULT,
                 N_SECONDS_READY_DEFAULT, FLAG_OFFER_AVIATION_DEFAULT,
-                FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT);
+                FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
+                null, null, null);
     }
 
 
@@ -611,7 +643,10 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 flagOf(props, STR_KEY_OFFER_AVIATION, settingsElse.flagOfferAviation()),
                 flagOf(props, STR_KEY_OFFER_PHARMA, settingsElse.flagOfferPharma()),
                 strUrlOf(props, STR_KEY_URL_OIDC, settingsElse.strUrlOidc()),
-                nPortOf(props, STR_KEY_PORT_UI_FIRST, settingsElse.nPortUiFirst()));
+                nPortOf(props, STR_KEY_PORT_UI_FIRST, settingsElse.nPortUiFirst()),
+                dirOf(props, STR_KEY_DIR_DAML, settingsElse.dirDaml()),
+                dirOf(props, STR_KEY_DIR_DPM, settingsElse.dirDpm()),
+                dirOf(props, STR_KEY_DIR_SPLICE, settingsElse.dirSplice()));
     }
 
 
@@ -629,7 +664,26 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         props.setProperty(STR_KEY_OFFER_AVIATION, Boolean.toString(flagOfferAviation));
         props.setProperty(STR_KEY_OFFER_PHARMA, Boolean.toString(flagOfferPharma));
         props.setProperty(STR_KEY_URL_OIDC, strUrlOidc);
+        // WRITTEN BLANK WHEN UNSET, so the file shows the three keys a reader
+        // can fill in, and blank reads back as the default.
+        props.setProperty(STR_KEY_DIR_DAML, strOfDir(dirDaml));
+        props.setProperty(STR_KEY_DIR_DPM, strOfDir(dirDpm));
+        props.setProperty(STR_KEY_DIR_SPLICE, strOfDir(dirSplice));
         return props;
+    }
+
+
+    /**
+     * @param dir an optional directory
+     * @return it absolute and normalised, or null
+     */
+    private static Path dirOptional(Path dir) {
+        return dir == null ? null : dir.toAbsolutePath().normalize();
+    }
+
+
+    private static String strOfDir(Path dir) {
+        return dir == null ? "" : dir.toString();
     }
 
 

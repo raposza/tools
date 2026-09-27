@@ -5,7 +5,9 @@ package com.raposza.sandbox.gui;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.raposza.canton.install.Edition;
+import com.raposza.canton.install.ToolchainRoots;
 import com.raposza.canton.install.VersionId;
+import com.raposza.runtime.localnet.SpliceInstallations;
 import com.raposza.runtime.settings.RaposzaSettings;
 import com.raposza.sandbox.app.SandboxOptions;
 
@@ -93,6 +95,24 @@ class SettingsWiringTest {
         assertEquals(32400, profile.nPortPostgres());
         assertEquals(90, profile.nSecondsReady());
         assertEquals(32400, SandboxOptions.ofDefaults().nPortPostgres());
+    }
+
+
+    /** The three installation directories reach the classes that use them - A-45. */
+    @Test
+    void the_installation_directories_reach_their_readers(@TempDir Path dirTmp)
+            throws IOException {
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DAML, dirTmp.resolve("daml").toString());
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_DPM, dirTmp.resolve("dpm").toString());
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_SPLICE,
+                dirTmp.resolve("splice").toString());
+        use(dirTmp, props);
+
+        ToolchainRoots roots = ToolchainRoots.ofDefaults();
+        assertEquals(dirTmp.resolve("daml"), roots.dirDaml());
+        assertEquals(dirTmp.resolve("dpm"), roots.dirDpm());
+        assertEquals(dirTmp.resolve("splice"), SpliceInstallations.dirRoot());
     }
 
 

@@ -500,7 +500,8 @@ public final class JwtPane extends JPanel {
                 settingsNow.strLauncher(), settingsNow.nPortFirst(),
                 settingsNow.nPortPostgres(), settingsNow.nSecondsReady(),
                 settingsNow.flagOfferAviation(), settingsNow.flagOfferPharma(), strWanted,
-                settingsNow.nPortUiFirst());
+                settingsNow.nPortUiFirst(),
+                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice());
         try {
             RaposzaSettings.store(settingsNew);
         }

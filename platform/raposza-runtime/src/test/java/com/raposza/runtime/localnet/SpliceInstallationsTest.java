@@ -5,7 +5,18 @@ package com.raposza.runtime.localnet;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Properties;
+
+import com.raposza.runtime.settings.RaposzaSettings;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The version page a Splice bundle carries, read the way the dropdown reads it.
@@ -15,6 +26,65 @@ import org.junit.jupiter.api.Test;
  * Author Claude/bentzn
  */
 class SpliceInstallationsTest {
+
+    private String strWas;
+
+    private boolean flagSet;
+
+
+    @AfterEach
+    void restore() {
+        if (!flagSet)
+            return;
+        if (strWas == null)
+            System.clearProperty(RaposzaSettings.STR_PROP_FILE);
+        else
+            System.setProperty(RaposzaSettings.STR_PROP_FILE, strWas);
+        RaposzaSettings.reload();
+    }
+
+
+    /** `dir.splice` moves the bundles - todo.md A-45. */
+    @Test
+    void theRootFollowsTheSetting(@TempDir Path dirTmp) throws IOException {
+        Path dirSet = dirTmp.resolve("corporate-splice");
+        Path fileLauncher = dirSet.resolve("0.8.3").resolve(SpliceInstallations.STR_BUNDLE)
+                .resolve("bin").resolve(SpliceInstallations.STR_BUNDLE);
+        Files.createDirectories(fileLauncher.getParent());
+        Files.createFile(fileLauncher);
+        fileLauncher.toFile().setExecutable(true);
+        use(dirTmp, dirSet.toString());
+
+        assertEquals(dirSet, SpliceInstallations.dirRoot());
+        assertEquals(dirSet.resolve("0.8.3").resolve(SpliceInstallations.STR_BUNDLE),
+                SpliceInstallations.dirBundle("0.8.3"));
+        assertEquals(List.of("0.8.3"), SpliceInstallations.lstVersion());
+    }
+
+
+    /** Blank is `~/.splice`, and the default root never moves with the setting. */
+    @Test
+    void blankIsTheDefault(@TempDir Path dirTmp) throws IOException {
+        use(dirTmp, "");
+        assertEquals(SpliceInstallations.dirRootDefault(), SpliceInstallations.dirRoot());
+        assertEquals(Path.of(System.getProperty("user.home"), ".splice"),
+                SpliceInstallations.dirRootDefault());
+    }
+
+
+    private void use(Path dirTmp, String strSplice) throws IOException {
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_DIR_SPLICE, strSplice);
+        Path file = dirTmp.resolve("settings.properties");
+        try (OutputStream out = Files.newOutputStream(file)) {
+            props.store(out, "test");
+        }
+        strWas = System.getProperty(RaposzaSettings.STR_PROP_FILE);
+        flagSet = true;
+        System.setProperty(RaposzaSettings.STR_PROP_FILE, file.toString());
+        RaposzaSettings.reload();
+    }
+
 
     private static String strRow(String strLabel, String strValue) {
         return "<tr class=\"row-odd\"><td><p>" + strLabel + "</p></td>\n<td><p>" + strValue

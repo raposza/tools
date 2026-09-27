@@ -147,8 +147,7 @@ public final class LocalNetProbe {
         if (args.length > 2) {
             Path dirBundle = Path.of(args[2]);
             if (!Files.isDirectory(dirBundle))
-                dirBundle = Path.of(System.getProperty("user.home"), ".splice", args[2],
-                        "splice-node");
+                dirBundle = SpliceInstallations.dirBundle(args[2]);
             if (Files.isDirectory(dirBundle)) {
                 stager = new LocalNetStager(dirBundle,
                         Path.of(System.getProperty("java.io.tmpdir"), "localnet-probe"));
@@ -495,7 +494,7 @@ public final class LocalNetProbe {
                 System.out.println("  canton jar: none");
         }
 
-        Path dirSplice = Path.of(System.getProperty("user.home"), ".splice");
+        Path dirSplice = SpliceInstallations.dirRoot();
         if (!Files.isDirectory(dirSplice)) {
             System.out.println("  " + dirSplice + ": not there");
             return;

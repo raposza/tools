@@ -341,8 +341,7 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
 
         Path dirBundle = Path.of(strBundle);
         if (!Files.isDirectory(dirBundle)) {
-            dirBundle = Path.of(System.getProperty("user.home"), ".splice", strBundle,
-                    "splice-node");
+            dirBundle = SpliceInstallations.dirBundle(strBundle);
         }
         if (!Files.isExecutable(dirBundle.resolve("bin/splice-node")))
             throw new StartException(2, "NOT FOUND: " + dirBundle.resolve("bin/splice-node"));
@@ -367,7 +366,7 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         }
 
         Path dirRun = dirRunWanted != null ? dirRunWanted
-                : Path.of(System.getProperty("user.home"), ".splice", "native-localnet");
+                : SpliceInstallations.dirRootDefault().resolve(SpliceInstallations.STR_DIR_RUN);
         return new LocalNetRunner(dirBundle, dirRun, image, flagFresh, flagOnce, flagUi,
                 portsNew, authNew);
     }
@@ -821,13 +820,13 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
 
     /**
      * probe-localnet.sh takes a version OR a bundle path. The version reads
-     * better and is only correct when the bundle sits under ~/.splice/&lt;v&gt;, so
+     * better and is only correct when the bundle sits under the Splice root, so
      * anything else prints the path it was actually given.
      *
      * @return what to hand the probe as its third argument
      */
     private String strBundleArg() {
-        Path dirSplice = Path.of(System.getProperty("user.home"), ".splice");
+        Path dirSplice = SpliceInstallations.dirRoot();
         Path dirVersion = dirBundle.getParent();
         if ("splice-node".equals(dirBundle.getFileName().toString()) && dirVersion != null
                 && dirSplice.equals(dirVersion.getParent()))
