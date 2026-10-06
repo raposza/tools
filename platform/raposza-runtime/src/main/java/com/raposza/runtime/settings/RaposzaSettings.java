@@ -115,11 +115,14 @@ import org.slf4j.LoggerFactory;
  *        or null for the default
  * @param dirSplice the directory the Splice bundles sit under, or null for
  *        `~/.splice`
+ * @param nPortRawar the port the RAWAR server binds - one port in the 31xxx
+ *        web UI class, mounts and not ports separating the RAWARs on it;
+ *        `rawar.md` section 5
  */
 public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, String strLine,
         String strLauncher, int nPortFirst, int nPortPostgres, int nSecondsReady,
         boolean flagOfferAviation, boolean flagOfferPharma, String strUrlOidc,
-        int nPortUiFirst, Path dirDaml, Path dirDpm, Path dirSplice) {
+        int nPortUiFirst, Path dirDaml, Path dirDpm, Path dirSplice, int nPortRawar) {
 
     /** Points the whole application at another settings file. Tests use it. */
     public static final String STR_PROP_FILE = "raposza.settings";
@@ -172,6 +175,13 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
     public static final String STR_KEY_URL_OIDC = "oidc.url";
 
     public static final String STR_KEY_PORT_DISCOVERY = "port.discovery";
+
+    /**
+     * The RAWAR server's port - `rawar.md` section 5. A WEB UI PORT, 31xxx,
+     * because what it serves is pages a person opens; one port per Sandbox,
+     * and the RAWARs on it are told apart by their mounts.
+     */
+    public static final String STR_KEY_PORT_RAWAR = "port.rawar";
 
     public static final String STR_KEY_LINE = "default.line";
 
@@ -240,6 +250,12 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
     /** The web UI block's first port - `LocalNetPorts`, 31000, 31010, 31020. */
     public static final int N_PORT_UI_FIRST_DEFAULT = LocalNetPorts.N_PORT_UI_FIRST_DEFAULT;
 
+    /**
+     * The RAWAR server's default port: in the web UI class and clear of
+     * LocalNetND's UI block at its default, 31000 to 31020.
+     */
+    public static final int N_PORT_RAWAR_DEFAULT = 31100;
+
     public static final int N_SECONDS_READY_DEFAULT = 300;
 
     /**
@@ -274,6 +290,9 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
     private static final String STR_DIR_FIXTURE_ROOT = "fixtures";
 
     private static final String STR_DIR_MINT_KEYS = "jwtmint/keys";
+
+    /** Where the RAWARs the Sandbox serves are developed, one directory each. */
+    private static final String STR_DIR_RAWARS = "rawars";
 
     private static final Logger LOG = LoggerFactory.getLogger(RaposzaSettings.class);
 
@@ -312,7 +331,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         this(dirHome, nPortMint, nPortDiscovery, strLine, strLauncher, nPortFirst,
                 nPortPostgres, nSecondsReady, FLAG_OFFER_AVIATION_DEFAULT,
                 FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
-                null, null, null);
+                null, null, null, N_PORT_RAWAR_DEFAULT);
     }
 
 
@@ -323,6 +342,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         nPortFirst = nPortRequired(nPortFirst, STR_KEY_PORT_FIRST);
         nPortPostgres = nPortRequired(nPortPostgres, STR_KEY_PORT_POSTGRES);
         nPortUiFirst = nPortRequired(nPortUiFirst, STR_KEY_PORT_UI_FIRST);
+        nPortRawar = nPortRequired(nPortRawar, STR_KEY_PORT_RAWAR);
         strLine = (strLine == null || strLine.isBlank()) ? STR_LINE_DEFAULT : strLine.trim();
         strLauncher = (strLauncher == null || strLauncher.isBlank()) ? STR_LAUNCHER_DEFAULT
                 : strLauncher.trim().toUpperCase(Locale.ROOT);
@@ -401,7 +421,22 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 N_PORT_FIRST_DEFAULT, N_PORT_POSTGRES_DEFAULT,
                 N_SECONDS_READY_DEFAULT, FLAG_OFFER_AVIATION_DEFAULT,
                 FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
-                null, null, null);
+                null, null, null, N_PORT_RAWAR_DEFAULT);
+    }
+
+
+    /**
+     * Where the Sandbox's RAWARs are developed: one directory per RAWAR, each
+     * served at its mount while the window is open - `rawar.md` section 5.
+     *
+     * UNDER THE HOME, NOT UNDER A RUN DIRECTORY. A run directory belongs to
+     * one Canton version, and a page a developer is writing does not change
+     * when the version under it does.
+     *
+     * @return the directory, whether or not it exists
+     */
+    public Path dirRawars() {
+        return dirHome.resolve(STR_DIR_RAWARS);
     }
 
 
@@ -588,6 +623,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         mapPort.put(STR_KEY_PORT_FIRST, settings.nPortFirst());
         mapPort.put(STR_KEY_PORT_POSTGRES, settings.nPortPostgres());
         mapPort.put(STR_KEY_PORT_UI_FIRST, settings.nPortUiFirst());
+        mapPort.put(STR_KEY_PORT_RAWAR, settings.nPortRawar());
 
         List<String> lstMoved = new ArrayList<>();
         for (Map.Entry<String, Integer> entry : mapPort.entrySet()) {
@@ -646,7 +682,8 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 nPortOf(props, STR_KEY_PORT_UI_FIRST, settingsElse.nPortUiFirst()),
                 dirOf(props, STR_KEY_DIR_DAML, settingsElse.dirDaml()),
                 dirOf(props, STR_KEY_DIR_DPM, settingsElse.dirDpm()),
-                dirOf(props, STR_KEY_DIR_SPLICE, settingsElse.dirSplice()));
+                dirOf(props, STR_KEY_DIR_SPLICE, settingsElse.dirSplice()),
+                nPortOf(props, STR_KEY_PORT_RAWAR, settingsElse.nPortRawar()));
     }
 
 
@@ -660,6 +697,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         props.setProperty(STR_KEY_PORT_FIRST, Integer.toString(nPortFirst));
         props.setProperty(STR_KEY_PORT_POSTGRES, Integer.toString(nPortPostgres));
         props.setProperty(STR_KEY_PORT_UI_FIRST, Integer.toString(nPortUiFirst));
+        props.setProperty(STR_KEY_PORT_RAWAR, Integer.toString(nPortRawar));
         props.setProperty(STR_KEY_SECONDS_READY, Integer.toString(nSecondsReady));
         props.setProperty(STR_KEY_OFFER_AVIATION, Boolean.toString(flagOfferAviation));
         props.setProperty(STR_KEY_OFFER_PHARMA, Boolean.toString(flagOfferPharma));
@@ -706,6 +744,8 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
             return PortClass.NODE.requireFirst(nPort, LocalNetPorts.N_SPAN_NODE, strKey);
         if (STR_KEY_PORT_UI_FIRST.equals(strKey))
             return PortClass.UI.requireFirst(nPort, LocalNetPorts.N_SPAN_UI, strKey);
+        if (STR_KEY_PORT_RAWAR.equals(strKey))
+            return PortClass.UI.require(nPort, strKey);
         return PortClass.ADMIN.require(nPort, strKey);
     }
 

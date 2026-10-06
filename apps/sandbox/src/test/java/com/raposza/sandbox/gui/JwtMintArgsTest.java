@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test;
  *
  * THE ISSUER IS THE ONE WORTH ASSERTING. The mint resolves it from the
  * machine's routable address when it is not told one, and the Sandbox publishes
- * a loopback url - so a token said `iss: http://192.168.0.170:33301` while the
+ * a loopback url - so a token said `iss: http://<LAN address>:33301` while the
  * discovery document beside it said `127.0.0.1`. Nothing rejected it, because
  * Canton with JWKS does not check `iss`; an OIDC-aware client does, and that is
  * exactly the client the discovery block exists for.
@@ -67,7 +67,7 @@ class JwtMintArgsTest {
         List<String> lstArg = JwtMintProcess.lstArgSpring();
 
         assertEquals("123456", JwtMintProcess.STR_PASSWORD);
-        assertTrue(lstArg.contains("--raposza.jwtmint.admin.password=123456"),
+        assertTrue(lstArg.contains("--raposza.oidc.admin.password=123456"),
                 String.valueOf(lstArg));
     }
 

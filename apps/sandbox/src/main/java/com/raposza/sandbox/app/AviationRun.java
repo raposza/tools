@@ -119,16 +119,26 @@ public final class AviationRun {
                     + "\nThat executable has to be on PATH to build the fixture.", ex);
         }
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                procHere.getInputStream(), StandardCharsets.UTF_8))) {
-            String strLine = reader.readLine();
-            while (strLine != null) {
-                outLine.accept(strLine);
-                strLine = reader.readLine();
+        // THE DEADLINE IS WATCHED WHILE THE OUTPUT IS READ - ProcessWatchdog.
+        // Until 2026-10-05 it was checked only after the read, and the read
+        // ends only when the child does, so a hung build was never killed.
+        try (ProcessWatchdog watchdog = ProcessWatchdog.start(procHere, N_SECONDS_BUILD)) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    procHere.getInputStream(), StandardCharsets.UTF_8))) {
+                String strLine = reader.readLine();
+                while (strLine != null) {
+                    outLine.accept(strLine);
+                    strLine = reader.readLine();
+                }
             }
-        }
-        catch (IOException ex) {
-            outLine.accept("output ended: " + ex.getMessage());
+            catch (IOException ex) {
+                outLine.accept("output ended: " + ex.getMessage());
+            }
+
+            if (watchdog.isFired()) {
+                outLine.accept("the build ran past " + N_SECONDS_BUILD + " s; killed");
+                return DamlScriptRun.N_EXIT_TIMEOUT;
+            }
         }
 
         try {

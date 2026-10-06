@@ -80,7 +80,9 @@ class LocalNetUiTest {
                 }
             }
         }
-        assertEquals(7, cntBundle);
+        // SEVEN PAGES AND FIVE UPSTREAM NAMES FOR THEM: three wallets, two
+        // name services.
+        assertEquals(12, cntBundle);
 
         // Scan is the one page with no login, and every other page reports the
         // role's own wallet user - "sv sv" told nobody anything.
@@ -93,6 +95,49 @@ class LocalNetUiTest {
                 cntNoLogin++;
         }
         assertEquals(1, cntNoLogin);
+    }
+
+
+    /**
+     * The page list names the node in every per-node page, and the upstream
+     * name still answers, configured for its own origin.
+     *
+     * THE CONTROL CAN FAIL: the upstream wallet is on all three ports, so a
+     * page list that kept the aliases would show it three times, and an alias
+     * that shared the role-named config would point its browser at another
+     * origin.
+     */
+    @Test
+    void thePagesAreNamedForTheirNodeAndTheUpstreamNamesStillAnswer() {
+        List<LocalNetUi.Site> lstSite = LocalNetUi.lstSite("127.0.0.1", MAP_PORT, MAP_AUDIENCE,
+                MAP_LOGIN);
+        List<String> lstUrl = LocalNetUi.lstPage(lstSite).stream().map(LocalNetUi.Page::strUrl)
+                .toList();
+        assertEquals(List.of("http://sv.localhost:4000", "http://scan.localhost:4000",
+                "http://sv.wallet.localhost:4000", "http://app-provider.wallet.localhost:3000",
+                "http://app-provider.ans.localhost:3000", "http://app-user.wallet.localhost:2000",
+                "http://app-user.ans.localhost:2000"), lstUrl);
+
+        List<String> lstAlias = LocalNetUi.lstPageAlias(lstSite).stream()
+                .map(LocalNetUi.Page::strUrl).toList();
+        assertEquals(List.of("http://wallet.localhost:4000", "http://wallet.localhost:3000",
+                "http://ans.localhost:3000", "http://wallet.localhost:2000",
+                "http://ans.localhost:2000"), lstAlias);
+
+        for (LocalNetUi.Site site : lstSite) {
+            for (LocalNetUi.Vhost vhost : site.lstVhost()) {
+                if (!vhost.flagAlias())
+                    continue;
+                assertFalse(vhost.strConfigJs().contains("." + vhost.strHost()),
+                        vhost.strHost() + " on " + site.nPort() + " points at a role-named origin");
+            }
+            // THE UNMATCHED HOST still reaches the role's own page.
+            if (!"sv".equals(site.strRole()))
+                assertEquals(site.strRole() + ".wallet.localhost",
+                        site.lstVhost().get(0).strHost());
+        }
+        assertTrue(LocalNetUi.lstHostName().contains("app-user.ans.localhost"));
+        assertTrue(LocalNetUi.lstHostName().contains("wallet.localhost"));
     }
 
 

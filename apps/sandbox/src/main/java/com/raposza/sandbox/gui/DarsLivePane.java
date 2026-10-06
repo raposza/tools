@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
@@ -126,6 +128,16 @@ public final class DarsLivePane extends JPanel {
     private transient Supplier<Path> supplierDirDar = () -> null;
 
     /**
+     * THE DIRECTORY OF THE LAST DAR UPLOADED, from any participant's tab - his
+     * instruction, 2026-10-03: "When one DAR has been uploaded, open the dialog
+     * in the same dir as the previous DAR." Five Registry Utility DARs sit in
+     * one directory, and the chooser went back to the store after each one.
+     * Shared by the three LocalNetND tabs, because the next DAR is in the same
+     * place whichever participant it is for. Null until the first upload.
+     */
+    private static volatile Path dirLastUpload;
+
+    /**
      * The version's DAR STORE - `&lt;run&gt;/dars` - where an uploaded DAR is
      * copied, or null for none. His question of 2026-09-23: "When they are
      * uploaded, are they also copied to the dir of that version?" They were
@@ -172,6 +184,9 @@ public final class DarsLivePane extends JPanel {
         pnlInner.add(scroll, BorderLayout.CENTER);
 
         add(GuiTheme.card("DARs on the participant", pnlInner), BorderLayout.CENTER);
+
+        // NOTHING IS RUNNING YET, so nothing here can act.
+        setInputEnabled(true);
     }
 
 
@@ -182,6 +197,7 @@ public final class DarsLivePane extends JPanel {
         if (supplierPortNew == null)
             throw new IllegalArgumentException("a port supplier is required");
         this.supplierPort = supplierPortNew;
+        setInputEnabled(true);
     }
 
 
@@ -288,6 +304,10 @@ public final class DarsLivePane extends JPanel {
         model.setColumnIdentifiers(new Object[] {"DAR", STR_COL_VETTED});
         model.setRowCount(0);
         lblState.setText(STR_IDLE);
+        // A STACK THAT HAS GONE DOWN leaves nothing to upload to - his
+        // instruction, 2026-10-03: "The button Upload DAR should be disabled if
+        // no participant is running."
+        setInputEnabled(true);
     }
 
 
@@ -320,7 +340,8 @@ public final class DarsLivePane extends JPanel {
         if (nPort <= 0)
             return;
 
-        Path dirStart = supplierDirDar.get();
+        Path dirLast = dirLastUpload;
+        Path dirStart = dirLast != null && Files.isDirectory(dirLast) ? dirLast : supplierDirDar.get();
         JFileChooser chooser = new JFileChooser();
         // HIDDEN DIRECTORIES ARE SHOWN - his instruction, 2026-09-23. Every store
         // this application keeps is under `~/.raposza`, and Swing's default hides
@@ -335,6 +356,8 @@ public final class DarsLivePane extends JPanel {
 
         Path fileDar = chooser.getSelectedFile().toPath();
         String strName = fileDar.getFileName().toString();
+        if (fileDar.getParent() != null)
+            dirLastUpload = fileDar.getParent();
 
         lblState.setText("uploading...");
         setInputEnabled(false);
@@ -385,12 +408,17 @@ public final class DarsLivePane extends JPanel {
         setInputEnabled(false);
         run(nPort, session -> {
             AdminPackages admin = session.packages();
-            if (AdminPackages.STR_REMOVE_DAR.equals(strMethod))
-                admin.removeDar(strId);
-            else if (AdminPackages.STR_VET.equals(strMethod))
-                admin.vetDar(strId);
-            else
-                admin.unvetDar(strId);
+            try {
+                if (AdminPackages.STR_REMOVE_DAR.equals(strMethod))
+                    admin.removeDar(strId);
+                else if (AdminPackages.STR_VET.equals(strMethod))
+                    admin.vetDar(strId);
+                else
+                    admin.unvetDar(strId);
+            }
+            catch (RuntimeException ex) {
+                throw new IllegalStateException(strRefusal(strLabel, ex.getMessage()), ex);
+            }
 
             List<Map<String, String>> lstDar = admin.lstDar();
             List<String> lstPackageId = admin.lstPackageIdMain(lstDar);
@@ -402,6 +430,63 @@ public final class DarsLivePane extends JPanel {
                 show(lstDar, lstPackageId, setVetted);
             });
         });
+    }
+
+
+    /** `<rpc> was refused with <CODE>: <description>`, as the wire layer words it. */
+    private static final Pattern PAT_REFUSED =
+            Pattern.compile("^(\\S+) was refused with ([A-Z_]+): (.*)$", Pattern.DOTALL);
+
+    /** The participant's reason for keeping a DAR, with the ids it names. */
+    private static final Pattern PAT_IN_USE = Pattern.compile(
+            "main package ([0-9a-f]+) is in-use by contract ContractId\\(([0-9a-f]+)\\)"
+                    + " on synchronizer (\\S+?)\\.*$", Pattern.DOTALL);
+
+
+    /**
+     * The refusal, worded for the dialog rather than for a log.
+     *
+     * What the wire layer hands over is the full RPC name, the gRPC code and
+     * Canton's description with three unbroken ids in it - one line of 400
+     * characters that the dialog wraps mid-id. His instruction, 2026-10-04:
+     * pretty it up. The DAR is named as the table names it, the ids are cut
+     * to a prefix, and the one refusal measured so far - a package still in
+     * use by a contract - gets its own wording and what to do about it.
+     *
+     * @param strLabel the DAR, as {@link #strDarLabel} names it
+     * @param strMessage what the call threw
+     * @return the text for the dialog, with line breaks
+     */
+    static String strRefusal(String strLabel, String strMessage) {
+        if (strMessage == null)
+            return strLabel + ": the participant refused, and gave no reason";
+        Matcher mRefused = PAT_REFUSED.matcher(strMessage.trim());
+        if (!mRefused.matches())
+            return strLabel + ": " + strMessage;
+        String strRpc = mRefused.group(1).substring(mRefused.group(1).lastIndexOf('/') + 1);
+        String strCode = mRefused.group(2);
+        String strWhy = mRefused.group(3).trim();
+
+        Matcher mInUse = PAT_IN_USE.matcher(strWhy);
+        if (mInUse.find()) {
+            return strLabel + " cannot be removed.\n\n"
+                    + "Its main package is still in use by a contract on the ledger:\n"
+                    + "    package      " + strShortId(mInUse.group(1)) + "\n"
+                    + "    contract     " + strShortId(mInUse.group(2)) + "\n"
+                    + "    synchronizer " + strShortId(mInUse.group(3)) + "\n\n"
+                    + "Archive the contract first, or leave the DAR in place.";
+        }
+        return strLabel + ": " + strRpc + " was refused (" + strCode + ").\n\n" + strWhy;
+    }
+
+
+    /**
+     * @param strId a package id, a contract id or a synchronizer id
+     * @return its first 24 characters and an ellipsis, or the whole thing
+     *         when it is not much longer than that
+     */
+    static String strShortId(String strId) {
+        return strId.length() > 28 ? strId.substring(0, 24) + "..." : strId;
     }
 
 
@@ -692,12 +777,18 @@ public final class DarsLivePane extends JPanel {
     }
 
 
+    /**
+     * @param flagOn false while a call is in flight; true lets the controls
+     *        follow whether a participant is running - with none, every one of
+     *        them is off, because each one talks to the participant
+     */
     private void setInputEnabled(boolean flagOn) {
-        btnRefresh.setEnabled(flagOn);
-        btnUpload.setEnabled(flagOn);
-        btnRemove.setEnabled(flagOn);
-        btnVet.setEnabled(flagOn);
-        btnUnvet.setEnabled(flagOn);
+        boolean flagUp = flagOn && supplierPort.getAsInt() > 0;
+        btnRefresh.setEnabled(flagUp);
+        btnUpload.setEnabled(flagUp);
+        btnRemove.setEnabled(flagUp);
+        btnVet.setEnabled(flagUp);
+        btnUnvet.setEnabled(flagUp);
     }
 
 

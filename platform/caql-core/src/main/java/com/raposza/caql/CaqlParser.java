@@ -71,7 +71,7 @@ public final class CaqlParser {
             "EXERCISE", "ALLOCATE", "PARTY", "USER", "ON", "WITH", "KEY", "SINGLE",
             "DELETE", "GRANT", "REVOKE", "TO", "FROM", "LIST", "GET", "PARTIES", "USERS",
             "PACKAGES", "LEDGER", "END", "ASSERT", "COUNT", "EXPECT", "PRUNE", "WHERE", "AND",
-            "OR", "NOT");
+            "OR", "NOT", "VIA");
 
     /**
      * The words that can START a statement.
@@ -433,15 +433,17 @@ public final class CaqlParser {
                     // that carried one narrowed nothing and read as if it had.
                     if (cur.peekWord("WITH")) {
                         throw cur.fail("WITH on FETCH ... SINGLE narrows nothing and is refused;"
-                                + " to narrow, write QUERY <template> WHERE <clause> and FETCH"
-                                + " the contract id it lists");
+                                + " to narrow, write FETCH <template> WHERE <clause> SINGLE");
                     }
+                    // WHERE NARROWS THE READ - 2026-10-03. The QUERY's clause,
+                    // so the QUERY's rules decide what parses.
+                    Optional<Clause> clauseWhere = where(cur);
                     cur.expect("SINGLE", "a FETCH by predicate must end in SINGLE; there is no"
                             + " form that takes the first of several, because the active"
                             + " contract set has no order to take the first of");
                     cur.end();
                     return new Stmt.FetchSingle(cur.numLine(), cur.strSource(), nameBind,
-                            lstParty, strTemplate);
+                            lstParty, strTemplate, clauseWhere);
                 }
 
                 CaqlRef refContract = cur.valueRef("FETCH needs a contract id, a binding, or a"
@@ -494,6 +496,16 @@ public final class CaqlParser {
                 String nameChoice = cur.reference("EXERCISE needs a choice name after the"
                         + " contract");
 
+                // VIA NAMES THE INTERFACE - 2026-10-03, his choice of form. After
+                // the choice, so completion still offers choices once the target
+                // is known - D-558.
+                Optional<String> strInterface = Optional.empty();
+                if (cur.peekWord("VIA")) {
+                    cur.skip(1);
+                    strInterface = Optional.of(cur.reference("VIA needs an interface reference,"
+                            + " module:entity"));
+                }
+
                 Optional<JsonNode> nodeWith = Optional.empty();
                 if (cur.peekWord("WITH")) {
                     cur.skip(1);
@@ -501,7 +513,7 @@ public final class CaqlParser {
                 }
                 cur.end();
                 return new Stmt.Exercise(cur.numLine(), cur.strSource(), nameBind, lstParty,
-                        nameChoice, refContract, nodeWith);
+                        nameChoice, refContract, strInterface, nodeWith);
             }
 
             default:

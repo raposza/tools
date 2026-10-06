@@ -23,6 +23,7 @@ import com.raposza.caql.CaqlException;
 import com.raposza.caql.CaqlParser;
 import com.raposza.caql.Entry;
 import com.raposza.caql.RunConfig;
+import com.raposza.caql.RunProgress_i;
 import com.raposza.caql.RunStatus;
 import com.raposza.caql.Runner;
 import com.raposza.caql.Stmt;
@@ -1637,8 +1638,13 @@ final class ParticipantPane extends JPanel {
         // component's state and is not touched from another thread.
         List<Binding> lstSeed = paneCaql.lstParam();
         paneCaql.setBusy(true);
+        paneCaql.progressStart(CaqlResults.strProgressHead(lstStmt.size(), idUserRun));
 
-        new SwingWorker<Transcript, Void>() {
+        // PROGRESS LINE BY LINE - his instruction, 2026-10-04. Each statement
+        // is shown running and then replaced by how it ended and how long it
+        // took; the transcript replaces the lot when the run is over. The
+        // lines are made on the worker and painted on the event thread.
+        new SwingWorker<Transcript, ProgressLine>() {
 
             @Override
             protected Transcript doInBackground() {
@@ -1649,7 +1655,37 @@ final class ParticipantPane extends JPanel {
                         new AuditLog(), nameProfile);
                 // What earlier runs bound, put back before this one starts.
                 runner.restore(lstSeed);
+                runner.useProgress(new RunProgress_i() {
+
+                    private long nNanoStart;
+
+                    @Override
+                    public void started(int numStmt, int cntStmt, Stmt stmt) {
+                        nNanoStart = System.nanoTime();
+                        publish(new ProgressLine(
+                                CaqlResults.strProgressRunning(numStmt, cntStmt, stmt), true));
+                    }
+
+
+                    @Override
+                    public void finished(int numStmt, int cntStmt, Entry entry) {
+                        long nMs = (System.nanoTime() - nNanoStart) / 1_000_000L;
+                        publish(new ProgressLine(
+                                CaqlResults.strProgressDone(numStmt, cntStmt, entry, nMs), false));
+                    }
+                });
                 return runner.run(strScript, lstStmt);
+            }
+
+
+            @Override
+            protected void process(List<ProgressLine> lstLine) {
+                for (ProgressLine line : lstLine) {
+                    if (line.flagRunning())
+                        paneCaql.progressRunning(line.strLine());
+                    else
+                        paneCaql.progressDone(line.strLine());
+                }
             }
 
 
@@ -1673,6 +1709,17 @@ final class ParticipantPane extends JPanel {
             }
 
         }.execute();
+    }
+
+
+    /**
+     * One line of a run's progress, on its way from the worker to the pane.
+     *
+     * @param strLine the line
+     * @param flagRunning true for a statement that is running now, whose line
+     *        the next one replaces
+     */
+    private record ProgressLine(String strLine, boolean flagRunning) {
     }
 
 

@@ -5,7 +5,10 @@ package com.raposza.gui;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.raposza.caql.CaqlException;
 import com.raposza.caql.Entry;
+import com.raposza.caql.Stmt;
 import com.raposza.caql.Transcript;
+
+import java.util.Locale;
 
 /**
  * A transcript, as the operator wants to read it.
@@ -91,6 +94,76 @@ public final class CaqlResults {
 
         buf.append('\n').append(strEnd(transcript)).append('\n');
         return buf.toString();
+    }
+
+
+    /** How much of a statement's first line a progress line carries. */
+    static final int CNT_PROGRESS_SOURCE = 90;
+
+
+    /**
+     * The first line of a run's progress - his instruction, 2026-10-04.
+     *
+     * @param cntStmt how many statements the script holds
+     * @param idUser who the run submits as
+     * @return the line
+     */
+    public static String strProgressHead(int cntStmt, String idUser) {
+        return "running " + cntStmt + (cntStmt == 1 ? " statement" : " statements")
+                + " as " + (idUser == null || idUser.isBlank() ? "(no user)" : idUser);
+    }
+
+
+    /**
+     * The line for a statement that is running now.
+     *
+     * @param numStmt one-based position in the script
+     * @param cntStmt how many statements the script holds
+     * @param stmt the statement
+     * @return the line
+     */
+    public static String strProgressRunning(int numStmt, int cntStmt, Stmt stmt) {
+        return strCounter(numStmt, cntStmt, stmt.numLine()) + String.format("%-15s", "running")
+                + "         " + strFirstLine(stmt.strSource());
+    }
+
+
+    /**
+     * The line for a statement that has ended, which replaces its running line.
+     *
+     * @param numStmt one-based position in the script
+     * @param cntStmt how many statements the script holds
+     * @param entry what it did
+     * @param nMs how long it took
+     * @return the line
+     */
+    public static String strProgressDone(int numStmt, int cntStmt, Entry entry, long nMs) {
+        return strCounter(numStmt, cntStmt, entry.numLine())
+                + String.format("%-15s", entry.status().strJson())
+                + String.format(Locale.ROOT, "%7.2f s ", nMs / 1000.0) + strFirstLine(entry.strSource());
+    }
+
+
+    private static String strCounter(int numStmt, int cntStmt, int numLine) {
+        int cntWidth = String.valueOf(cntStmt).length();
+        return String.format("[%" + cntWidth + "d/%d]  line %-5d ", numStmt, cntStmt, numLine);
+    }
+
+
+    /**
+     * @param strSource a statement as written, possibly over several lines
+     * @return its first non-blank line, cut to {@link #CNT_PROGRESS_SOURCE}
+     */
+    static String strFirstLine(String strSource) {
+        String strOut = "";
+        for (String strLine : (strSource == null ? "" : strSource).split("\\R")) {
+            if (!strLine.isBlank()) {
+                strOut = strLine.strip();
+                break;
+            }
+        }
+        return strOut.length() <= CNT_PROGRESS_SOURCE ? strOut
+                : strOut.substring(0, CNT_PROGRESS_SOURCE) + " ...";
     }
 
 

@@ -209,19 +209,31 @@ public final class DamlScriptRun {
         }
         this.process = procHere;
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                procHere.getInputStream(), StandardCharsets.UTF_8))) {
-            String strLine = reader.readLine();
-            while (strLine != null) {
-                lstLine.add(strLine);
-                outLine.accept(strLine);
-                strLine = reader.readLine();
+        // THE DEADLINE IS WATCHED WHILE THE OUTPUT IS READ - ProcessWatchdog.
+        // Until 2026-10-05 it was checked only after the read, and the read
+        // ends only when the child does, so a hung script was never killed.
+        boolean flagFired;
+        try (ProcessWatchdog watchdog = ProcessWatchdog.start(procHere, spec.nSecondsTimeout())) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    procHere.getInputStream(), StandardCharsets.UTF_8))) {
+                String strLine = reader.readLine();
+                while (strLine != null) {
+                    lstLine.add(strLine);
+                    outLine.accept(strLine);
+                    strLine = reader.readLine();
+                }
             }
+            catch (IOException ex) {
+                // The stream broke, which on this path means the process was
+                // killed under it. The exit code below is still the answer.
+                outLine.accept("output ended: " + ex.getMessage());
+            }
+            flagFired = watchdog.isFired();
         }
-        catch (IOException ex) {
-            // The stream broke, which on this path means the process was
-            // killed under it. The exit code below is still the answer.
-            outLine.accept("output ended: " + ex.getMessage());
+        if (flagFired && !flagCancelled) {
+            this.process = null;
+            outLine.accept("timed out after " + spec.nSecondsTimeout() + " s; killed");
+            return N_EXIT_TIMEOUT;
         }
 
         boolean flagDone;
@@ -241,7 +253,7 @@ public final class DamlScriptRun {
             return N_EXIT_CANCELLED;
         if (!flagDone) {
             outLine.accept("timed out after " + spec.nSecondsTimeout() + " s; killed");
-            procHere.destroyForcibly();
+            ProcessWatchdog.kill(procHere);
             return N_EXIT_TIMEOUT;
         }
         return procHere.exitValue();

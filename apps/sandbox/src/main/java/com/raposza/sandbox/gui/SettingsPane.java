@@ -13,6 +13,7 @@ import java.awt.event.HierarchyEvent;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -74,6 +75,33 @@ public final class SettingsPane extends JPanel {
     private final JButton btnDefaults = new JButton("Restore defaults");
 
     private final Map<String, JTextField> mapField = new LinkedHashMap<>();
+
+    /** The `...` beside each path field, by the same key. */
+    private final Map<String, JButton> mapBrowse = new LinkedHashMap<>();
+
+    /**
+     * WHAT A RUNNING STACK IS BUILT ON - his instruction, 2026-10-04: lock
+     * what cannot be changed while the system runs.
+     *
+     * The directory holds the keys the mint signs with and the snapshots;
+     * the mint port is where the participant fetches its key set, named in
+     * its configuration at start; the PostgreSQL, first stack and first web
+     * UI ports are the running stack's own on LocalNetND; and the three
+     * installation directories hold the toolchain a fixture runs scripts
+     * with. The discovery and RAWAR ports are NOT here: a save rebinds both
+     * servers on the spot - `SandboxWindow.settingsSaved`.
+     */
+    static final List<String> LST_KEY_LOCKED = List.of(RaposzaSettings.STR_KEY_DIR_HOME,
+            RaposzaSettings.STR_KEY_PORT_MINT, RaposzaSettings.STR_KEY_PORT_POSTGRES,
+            RaposzaSettings.STR_KEY_PORT_FIRST, RaposzaSettings.STR_KEY_PORT_UI_FIRST,
+            RaposzaSettings.STR_KEY_DIR_DAML, RaposzaSettings.STR_KEY_DIR_DPM,
+            RaposzaSettings.STR_KEY_DIR_SPLICE);
+
+    private static final String STR_WHY_LOCKED = "Locked while the stack is running."
+            + " Stop it to change this.";
+
+    /** Whether {@link #setLocked} has locked the rows above. */
+    private transient boolean flagLocked;
 
     /**
      * The one row on this tab that is not a text field.
@@ -304,6 +332,38 @@ public final class SettingsPane extends JPanel {
 
 
     /**
+     * Locks the rows a running stack is built on, and the two buttons that
+     * would rewrite them.
+     *
+     * @param flagLockedNew true while a stack is starting, running or stopping
+     */
+    public void setLocked(boolean flagLockedNew) {
+        this.flagLocked = flagLockedNew;
+        for (String strKey : LST_KEY_LOCKED) {
+            JTextField fld = mapField.get(strKey);
+            if (fld != null) {
+                fld.setEnabled(!flagLockedNew);
+                fld.setToolTipText(flagLockedNew ? STR_WHY_LOCKED : null);
+            }
+            JButton btnBrowse = mapBrowse.get(strKey);
+            if (btnBrowse != null)
+                btnBrowse.setEnabled(!flagLockedNew);
+        }
+        btnDefaults.setEnabled(!flagLockedNew);
+        btnDefaults.setToolTipText(flagLockedNew ? STR_WHY_LOCKED : null);
+        btnUndo.setEnabled(!flagLockedNew && settingsUndo != null);
+    }
+
+
+    /**
+     * @return whether the rows a running stack is built on are locked
+     */
+    public boolean isLocked() {
+        return flagLocked;
+    }
+
+
+    /**
      * WHICH FIXTURE THIS WINDOW CAN BUILD, and the other's rows go away.
      *
      * @param flagLocalNet whether this window drives LocalNetND
@@ -373,6 +433,8 @@ public final class SettingsPane extends JPanel {
                     .setText(Integer.toString(settings.nPortMint()));
             mapField.get(RaposzaSettings.STR_KEY_PORT_DISCOVERY)
                     .setText(Integer.toString(settings.nPortDiscovery()));
+            mapField.get(RaposzaSettings.STR_KEY_PORT_RAWAR)
+                    .setText(Integer.toString(settings.nPortRawar()));
             strLine = settings.strLine();
             strLauncher = settings.strLauncher();
             mapField.get(RaposzaSettings.STR_KEY_PORT_FIRST)
@@ -423,7 +485,8 @@ public final class SettingsPane extends JPanel {
                 nOf(RaposzaSettings.STR_KEY_PORT_UI_FIRST, "First web UI port"),
                 dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DAML, "DAML Assistant directory"),
                 dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DPM, "DPM directory"),
-                dirOptionalOf(RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory"));
+                dirOptionalOf(RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory"),
+                nOf(RaposzaSettings.STR_KEY_PORT_RAWAR, "RAWAR port"));
     }
 
 
@@ -491,6 +554,10 @@ public final class SettingsPane extends JPanel {
         int nRow = 0;
         nRow = addTextRow(pnl, nRow, RaposzaSettings.STR_KEY_PORT_DISCOVERY,
                 "Discovery port");
+        // BESIDE DISCOVERY - his instruction, 2026-10-02. Both are the
+        // window's own servers rather than a stack's, and both stay up while
+        // stacks come and go.
+        nRow = addTextRow(pnl, nRow, RaposzaSettings.STR_KEY_PORT_RAWAR, "RAWAR port");
         nRow = addTextRow(pnl, nRow, RaposzaSettings.STR_KEY_PORT_MINT, "JWT mint port");
         nRow = addTextRow(pnl, nRow, RaposzaSettings.STR_KEY_PORT_POSTGRES,
                 "PostgreSQL port");
@@ -600,6 +667,7 @@ public final class SettingsPane extends JPanel {
         JTextField fld = new JTextField(N_COLS_PATH);
         mapField.put(strKey, fld);
         JButton btnBrowse = new JButton("...");
+        mapBrowse.put(strKey, btnBrowse);
         btnBrowse.addActionListener(evt -> browse(fld, strLabel));
         // THE SETTINGS KEY IS THE HELP KEY. See FieldHelp.
         JLabel lblRow = new JLabel(strLabel);

@@ -7,7 +7,8 @@
   Ledger API v1 client, for Canton 2.x.
 
   bindings-java brings grpc-api/core/netty/protobuf/stub 1.60.0 and
-  protobuf-java 3.24.0 transitively, so none of those are declared here.
+  protobuf-java 3.24.0 transitively, so none of those are declared here;
+  platform/pom.xml raises protobuf-java to 3.25.8, CVE-2024-7254.
 
   NOTE: bindings-java 2.x also contains classes under com.daml.ledger.api.v2 -
   an early skeleton, 297 of whose class names collide with the real v2 API in
@@ -22,7 +23,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.4.1</version>
+        <version>0.5.0</version>
     </parent>
 
     <artifactId>raposza-target-2x</artifactId>
@@ -118,9 +119,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <configuration>
-                    <skip>true</skip>
-                </configuration>
+                <executions>
+                    <execution>
+                        <id>s1-no-sdk-types-above-translation</id>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

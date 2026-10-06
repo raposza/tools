@@ -124,6 +124,17 @@ public final class LfTypeRegistry implements TypeRegistry_i {
 
 
     @Override
+    public List<ChoiceInfo> interfaceChoices(DataId idInterface) {
+        load();
+        if (idInterface == null)
+            return List.of();
+
+        List<ChoiceInfo> lstChoice = mapChoiceByInterface.get(idInterface);
+        return lstChoice == null ? List.of() : List.copyOf(lstChoice);
+    }
+
+
+    @Override
     public Optional<DataShape> shape(DataId idData) {
         load();
         if (idData == null)

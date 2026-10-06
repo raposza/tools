@@ -88,7 +88,22 @@ public final class JwtPane extends JPanel {
     static final String STR_USER_ADMIN = "participant_admin";
 
 
+    /**
+     * THE SERVICE'S OWN OUTPUT and this pane's notes - the debug log. It is
+     * shown on the Logs tab, not here, since 2026-10-04: his instruction, it
+     * is not what a user reads on this tab. {@link #logService} hands it over.
+     */
     private final LogPane log = new LogPane();
+
+    /**
+     * WHO ASKED THE PROVIDER FOR WHAT, and whether it answered - his
+     * instruction, 2026-10-04. One line per request, out of Tomcat's access
+     * log valve, worded by {@link OidcAccess}.
+     */
+    private final LogPane logAccess = new LogPane();
+
+    private final transient LogTail tailAccess =
+            new LogTail(JwtMintProcess::fileAccessLog, this::accessArrived);
 
     private final JLabel lblStatus = new JLabel("not started");
 
@@ -206,7 +221,8 @@ public final class JwtPane extends JPanel {
         areaToken.setWrapStyleWord(false);
 
         tabsInner.addTab("Service", buildServiceTab());
-        tabsInner.addTab("Log", log);
+        tabsInner.addTab("Access log", logAccess);
+        logAccess.useClock(true);
         add(tabsInner, BorderLayout.CENTER);
 
         mint.useExitSink(this::exited);
@@ -329,14 +345,18 @@ public final class JwtPane extends JPanel {
         if (JwtMintProcess.isExternal()) {
             log.append("using the external OpenID Provider at "
                     + JwtMintProcess.strUrlBase() + " - nothing is started here");
+            logAccess.append("the provider at " + JwtMintProcess.strUrlBase()
+                    + " is external - its requests are not seen here");
             discoverLater();
             return;
         }
 
         try {
             mint.start();
+            tailAccess.start();
             Path fileJar = mint.fileJar();
             log.append("starting " + fileJar);
+            log.append("access log " + JwtMintProcess.fileAccessLog());
             // SHOWN PLAINLY - the Sandbox is for test, and every password it
             // gives the provider is the same one.
             log.append("admin " + JwtMintProcess.STR_ADMIN_USER + " / "
@@ -434,6 +454,7 @@ public final class JwtPane extends JPanel {
         if (mint.isRunning())
             log.append("stopping the token service");
         mint.stop();
+        tailAccess.stop();
     }
 
 
@@ -458,6 +479,7 @@ public final class JwtPane extends JPanel {
         // the url was typed still holds the mint port, and leaving it would
         // make the next embedded start fail to bind rather than say why.
         mint.stop();
+        tailAccess.stop();
         startService();
     }
 
@@ -484,7 +506,6 @@ public final class JwtPane extends JPanel {
         }
         catch (IllegalArgumentException ex) {
             log.append(String.valueOf(ex.getMessage()));
-            tabsInner.setSelectedComponent(log);
             notice("Not applied - " + ex.getMessage());
             return;
         }
@@ -501,7 +522,8 @@ public final class JwtPane extends JPanel {
                 settingsNow.nPortPostgres(), settingsNow.nSecondsReady(),
                 settingsNow.flagOfferAviation(), settingsNow.flagOfferPharma(), strWanted,
                 settingsNow.nPortUiFirst(),
-                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice());
+                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice(),
+                settingsNow.nPortRawar());
         try {
             RaposzaSettings.store(settingsNew);
         }
@@ -543,6 +565,38 @@ public final class JwtPane extends JPanel {
      */
     public boolean isMintRunning() {
         return mint.isRunning();
+    }
+
+
+    /**
+     * For the OIDC lamp - his instruction, 2026-10-04.
+     *
+     * @return built in: whether the process runs; external: whether its
+     *         discovery document has been read
+     */
+    public boolean isProviderUp() {
+        return JwtMintProcess.isExternal() ? JwtMintProcess.isDiscovered() : mint.isRunning();
+    }
+
+
+    /**
+     * @return the debug log, for the Logs tab to show; this pane keeps
+     *         writing to it
+     */
+    public LogPane logService() {
+        return log;
+    }
+
+
+    /**
+     * From the tail's thread; a line the valve did not write is dropped.
+     *
+     * @param strRaw one line of the access log
+     */
+    private void accessArrived(String strRaw) {
+        String strLine = OidcAccess.strLine(strRaw, JwtMintProcess.nPort());
+        if (strLine != null)
+            logAccess.append(strLine);
     }
 
 
@@ -730,7 +784,6 @@ public final class JwtPane extends JPanel {
             log.append("the token service exited with code " + nCode);
             lblStatus.setText("exited with code " + nCode + strWhy);
             lblStatus.setForeground(GuiTheme.COL_BAD);
-            tabsInner.setSelectedComponent(log);
         });
     }
 
@@ -803,7 +856,7 @@ public final class JwtPane extends JPanel {
         if (authHere == null) {
             log.append("no stack has been started, so there is nothing to mint"
                     + " a token for");
-            tabsInner.setSelectedComponent(log);
+            notice("No stack has been started - there is nothing to mint a token for");
             return;
         }
 
@@ -839,7 +892,7 @@ public final class JwtPane extends JPanel {
         AuthSettings authHere = auth;
         if (authHere == null || nPortJsonApi <= 0) {
             log.append("no stack has been started, so there is no ledger to read users from");
-            tabsInner.setSelectedComponent(log);
+            notice("No stack has been started - there is no ledger to read users from");
             return;
         }
 
@@ -986,7 +1039,7 @@ public final class JwtPane extends JPanel {
     private void failed(String strUrl, String strWhy) {
         SwingUtilities.invokeLater(() -> {
             log.append("FATAL: " + strUrl + " - " + strWhy);
-            tabsInner.setSelectedComponent(log);
+            notice("FAILED: " + strUrl + " - " + strWhy);
         });
     }
 

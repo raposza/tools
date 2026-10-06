@@ -55,6 +55,17 @@ public final class CaqlSkills {
                 statement by its line number, so the line you ran and the line
                 reported are the same line.
 
+                While a run is in flight, Results shows its PROGRESS, one line
+                per statement: where the run is, the statement's line in the
+                editor, how it ended, how long it took and its first line.
+
+                  [ 3/122]  line 26    running                  treasury = ...
+                  [ 3/122]  line 26    committed         0.21 s treasury = ...
+
+                The running line is replaced by the outcome when the statement
+                ends; the full transcript replaces the progress when the run
+                is over.
+
                 Identifiers in the editor may be written SHORT, as the panes
                 show them - `PlantOperator-d4d95138::` followed by the cut
                 marker and the last six characters of the fingerprint. They are
@@ -70,7 +81,7 @@ public final class CaqlSkills {
 
                   AS <party> QUERY <template> [WHERE <clause>];
                   AS <party> FETCH <contractId>;
-                  AS <party> FETCH <template> SINGLE;
+                  AS <party> FETCH <template> [WHERE <clause>] SINGLE;
                   LIST PARTIES;
                   LIST USERS;
                   LIST PACKAGES;
@@ -105,10 +116,23 @@ public final class CaqlSkills {
                 filter sees it. The transcript records countRead before the
                 filter, count after it, and truncated when the cap was hit.
 
+                FETCH ... SINGLE takes the same WHERE, and binds the ONE contract
+                that survives it - none, more than one, or one out of a read
+                that hit the 1000 cap are each refused, the last because a
+                match beyond the cap cannot be ruled out:
+
+                  h = AS $treasury FETCH Utility.Registry.Holding.V0.Holding:Holding
+                        WHERE owner = $treasury AND lock = null AND amount = 60000000.0
+                        SINGLE;
+
+                `= null` asks whether an Optional is None, whatever it holds - an
+                Optional of a RECORD included, which no other comparison reaches.
+                `null` takes `=` only, and only on an Optional field.
+
                 Writes - refused on a read-only connection:
 
                   AS <party> CREATE <template> WITH <json>;
-                  AS <party> EXERCISE ON <contractId> <Choice> [WITH <json>];
+                  AS <party> EXERCISE ON <contractId> <Choice> [VIA <interface>] [WITH <json>];
                   AS <party> EXERCISE ON KEY <template> <json> <Choice> [WITH <json>];
                   ALLOCATE PARTY "<hint>";
                   CREATE USER "<userId>" WITH <json>;
@@ -124,6 +148,39 @@ public final class CaqlSkills {
                 Party allocation and user management are administrative calls
                 rather than ledger submissions, and they count as writes: a
                 read-only connection is a promise not to change the participant.
+
+                <party> may be a LIST, comma separated:
+
+                  AS $operator, $provider
+                     CREATE Utility.Registry.App.V0.Service.Provider:ProviderService
+                     WITH { "operator": "$operator", "provider": "$provider" };
+
+                Every party named acts - actAs on CREATE and EXERCISE - or reads
+                - readAs on QUERY and FETCH. A contract two parties must sign is
+                created by naming both.
+
+
+                INTERFACE CHOICES - VIA
+                -----------------------
+
+                A choice a template inherits from an interface it implements is
+                exercised like its own. Which one is sent:
+
+                  * the template's own choice of that name, when it has one;
+                  * else the one implemented interface that declares it;
+                  * else - MORE THAN ONE interface declares it - the statement is
+                    refused, naming every one of them. Say which with VIA:
+
+                  AS $treasury, $registrar
+                     EXERCISE ON $factory TransferFactory_Transfer
+                     VIA Splice.Api.Token.TransferInstructionV1:TransferFactory
+                     WITH { ... };
+
+                The interface is written Module:Entity, like a template.
+
+                VIA comes after the choice, so completion still offers the
+                choices once the contract is known. The transcript records
+                interfaceId whenever the target is not the template.
 
 
                 BINDINGS
@@ -155,6 +212,17 @@ public final class CaqlSkills {
                   $r.owner.party
 
                 Records only. No index, no operator, no arithmetic, no call.
+
+                ONE CONVERSION, asked for by name: `.asText` on a PARTY is that
+                party's id, typed TEXT.
+
+                  "subject": "$treasury.asText"
+
+                A party is NOT turned into text on its own - a Text field given a
+                party binding is refused - because an implicit rule would let a
+                party land in any label without a word. On a record, `asText` is
+                an ordinary field name; on anything else it is refused, naming
+                what it reached.
 
                 A binding to a contract that a later consuming choice archived
                 is STALE, and using it fails locally rather than on the wire.
@@ -267,8 +335,12 @@ public final class CaqlSkills {
                 LIMITS WORTH KNOWING BEFORE YOU HIT THEM
                 ----------------------------------------
 
-                * AS takes ONE party. A submission needing two signatories, or
-                  actAs plus an extra readAs, cannot be written today.
+                * AS names the parties that act, or that read. A submission
+                  needing actAs AND an extra readAs cannot be written.
+                * There are no disclosed contracts. A contract a choice needs to
+                  see - a registry's configuration, a rule, a credential - has
+                  to be visible to one of the AS parties: name its stakeholder
+                  among them.
                 * WITH on a QUERY and on FETCH ... SINGLE is refused; WHERE, on
                   a QUERY, is the filter. FETCH ... SINGLE only succeeds on a
                   template with exactly one visible contract.

@@ -427,10 +427,37 @@ public final class SandboxService implements StackService_i {
 
 
     /**
-     * @return every Canton on this machine, newest first is not promised
+     * The machine, read once. Discovery walks the whole dpm cache - stat and
+     * readdir, file by file - and the window asked for it on EVERY lamp tick,
+     * 500 ms apart, on the event thread: A-63, measured 2026-10-04, about one
+     * sample in twenty of every stall. Nothing installs a Canton behind this
+     * application's back except the install dialogs, and they rescan.
+     */
+    private static volatile List<CantonInstallation> lstCantonCached;
+
+
+    /**
+     * @return every Canton on this machine, newest first is not promised;
+     *         read ONCE and kept until {@link #rescanCanton()}
      */
     public static List<CantonInstallation> lstCanton() {
-        return CantonInstallations.ofDefaults().discover();
+        List<CantonInstallation> lstHere = lstCantonCached;
+        if (lstHere == null) {
+            lstHere = List.copyOf(CantonInstallations.ofDefaults().discover());
+            lstCantonCached = lstHere;
+        }
+        return lstHere;
+    }
+
+
+    /**
+     * Reads the machine again, for a caller that knows it changed.
+     *
+     * @return every Canton on this machine, as {@link #lstCanton()}
+     */
+    public static List<CantonInstallation> rescanCanton() {
+        lstCantonCached = null;
+        return lstCanton();
     }
 
 

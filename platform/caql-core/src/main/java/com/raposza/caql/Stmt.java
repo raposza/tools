@@ -104,11 +104,17 @@ public sealed interface Stmt {
      * @param lstParty actAs parties
      * @param nameChoice the choice
      * @param refContract the target contract id
+     * @param strInterface the interface named by VIA, unresolved; empty when
+     *                     the statement named none. Required only when more
+     *                     than one interface the template implements declares
+     *                     the choice - TransferOffer implements both
+     *                     TransferInstructionV1 and V2, and both declare
+     *                     TransferInstruction_Accept with different arguments
      * @param nodeWith the choice argument, empty when the statement had no WITH
      */
     record Exercise(int numLine, String strSource, Optional<String> nameBind,
             List<CaqlRef> lstParty, String nameChoice, CaqlRef refContract,
-            Optional<JsonNode> nodeWith) implements Stmt {}
+            Optional<String> strInterface, Optional<JsonNode> nodeWith) implements Stmt {}
 
 
     /**
@@ -146,14 +152,25 @@ public sealed interface Stmt {
      * narrow it changed nothing. The parser now refuses it by name, as D-751
      * refused `WITH` on a `QUERY`, and names `QUERY ... WHERE` instead.
      *
+     * IT TAKES `WHERE` SINCE 2026-10-03 - his decision, the USDCx fixture:
+     * `FETCH T WHERE <clause> SINGLE`, the QUERY's clause and the QUERY's
+     * sieve, binding the one contract that survives it. `WITH` stays refused.
+     *
      * @param numLine line
      * @param strSource source
      * @param nameBind binding name, empty when unbound
      * @param lstParty readAs parties
      * @param strTemplate the template reference, unresolved
+     * @param clauseWhere the sieve, empty when the statement had no WHERE.
+     *                    With one, the read is the QUERY's - capped at the
+     *                    QUERY's cap - and exactly one contract must survive
+     *                    the sieve. A holding among several cannot be named
+     *                    any other way: the active contract set has no order
+     *                    and a result record has no index
      */
     record FetchSingle(int numLine, String strSource, Optional<String> nameBind,
-            List<CaqlRef> lstParty, String strTemplate) implements Stmt {}
+            List<CaqlRef> lstParty, String strTemplate, Optional<Clause> clauseWhere)
+            implements Stmt {}
 
 
     /**

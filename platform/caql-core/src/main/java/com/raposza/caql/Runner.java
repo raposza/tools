@@ -136,6 +136,9 @@ public final class Runner {
 
     private int cntStatement;
 
+    /** Told about each statement as it runs, or null - see {@link RunProgress_i}. */
+    private RunProgress_i progress;
+
 
     /**
      * @param client the participant
@@ -189,6 +192,15 @@ public final class Runner {
     }
 
 
+    /**
+     * @param progressNew told about each statement as it starts and ends, or
+     *        null for nobody - his instruction, 2026-10-04
+     */
+    public void useProgress(RunProgress_i progressNew) {
+        this.progress = progressNew;
+    }
+
+
     /** @return the bindings this run made, for inspection after it ends */
     public Env env() {
         return env;
@@ -205,9 +217,16 @@ public final class Runner {
         Instant instStart = Instant.now();
         List<Entry> lstEntry = new ArrayList<>();
 
+        int cntStmt = lstStmt.size();
+        int numStmt = 0;
         for (Stmt stmt : lstStmt) {
+            numStmt++;
+            if (progress != null)
+                progress.started(numStmt, cntStmt, stmt);
             Entry entry = execute(stmt);
             lstEntry.add(entry);
+            if (progress != null)
+                progress.finished(numStmt, cntStmt, entry);
 
             // BEFORE the stop check, so the statement that ended the run is in
             // the log. An outcome-unknown is precisely the record most worth
@@ -351,11 +370,14 @@ public final class Runner {
                         "the registry does not hold " + contract.idTemplate()
                                 + "; its package has not been read from the participant"));
 
-        ChoiceInfo choice = choice(template, stmt.nameChoice(), stmt);
+        Target target = target(template, stmt);
+        ChoiceInfo choice = target.choice();
         JsonNode nodeArg = stmt.nodeWith().orElse(mapper.createObjectNode());
         DamlValue argument = coercer(stmt).coerce(nodeArg, choice.typeArg());
 
         describe(resolved, contract.idTemplate(), lstParty, choice.nameChoice(), idContract);
+        if (!target.idTarget().equals(contract.idTemplate()))
+            resolved.put("interfaceId", target.idTarget().toString());
         resolved.set("argument", rendered(argument));
         resolved.put("consuming", choice.flagConsuming());
 
@@ -373,7 +395,7 @@ public final class Runner {
         }
 
         return submit(stmt, idStatement, resolved, stmt.nameBind(), lstParty,
-                new Command.Exercise(contract.idTemplate(), idContract, choice.nameChoice(),
+                new Command.Exercise(target.idTarget(), idContract, choice.nameChoice(),
                         argument),
                 (tree, result) -> {
                     // Staleness BEFORE binding, so a result holding the id that
@@ -550,23 +572,60 @@ public final class Runner {
         resolved.put("templateId", template.idTemplate().toString());
         resolved.set("readAs", texts(lstParty));
 
+        // THE SIEVE IS RESOLVED BEFORE THE READ, as on a QUERY, so a structural
+        // fault is refused with nothing asked of the participant.
+        Sieve sieve = null;
+        if (stmt.clauseWhere().isPresent()) {
+            resolved.put("where", stmt.clauseWhere().get().str());
+            sieve = new Sieve(stmt.clauseWhere().get(), template, registry, coercer(stmt), stmt);
+        }
+
         DataId idFilter = idFilter(template.idTemplate());
         if (!idFilter.equals(template.idTemplate()))
             resolved.put("filterTemplateId", idFilter.toString());
 
+        // Without a WHERE two are asked for, which is enough to tell one from
+        // several. With one the QUERY's cap applies, because the match may be
+        // anywhere in what the parties see.
+        int cntAsk = sieve == null ? 2 : CNT_QUERY_MAX;
         List<Contract> lstContract = client.activeContracts(new ContractQuery(lstParty,
-                List.of(idFilter), List.of(), "", 2, Optional.empty()));
+                List.of(idFilter), List.of(), "", cntAsk, Optional.empty()));
 
+        boolean flagTruncated = sieve != null && lstContract.size() >= CNT_QUERY_MAX;
+        if (sieve != null) {
+            resolved.put("countRead", lstContract.size());
+            if (flagTruncated)
+                resolved.put("truncated", true);
+            List<Contract> lstKept = new ArrayList<>();
+            for (Contract contract : lstContract) {
+                if (sieve.matches(contract.payload()))
+                    lstKept.add(contract);
+            }
+            lstContract = lstKept;
+        }
+
+        String strWhat = template.idTemplate().shortName()
+                + (sieve == null ? "" : " WHERE " + stmt.clauseWhere().get().str());
         resolved.put("count", lstContract.size());
         if (lstContract.isEmpty()) {
-            throw new CaqlException(stmt.numLine(), stmt.strSource(), "no active "
-                    + template.idTemplate().shortName() + " is visible to " + lstParty);
+            throw new CaqlException(stmt.numLine(), stmt.strSource(), "no active " + strWhat
+                    + " is visible to " + lstParty
+                    + (flagTruncated ? "; the read stopped at " + CNT_QUERY_MAX
+                            + " contracts, so one may lie beyond it" : ""));
         }
         if (lstContract.size() > 1) {
             throw new CaqlException(stmt.numLine(), stmt.strSource(), "more than one active "
-                    + template.idTemplate().shortName() + " is visible to " + lstParty
+                    + strWhat + " is visible to " + lstParty
                     + "; SINGLE binds exactly one, and the active contract set has no order"
                     + " that would make any of them the right one");
+        }
+        // ONE MATCH IN A TRUNCATED READ PROVES NOTHING about the contracts the
+        // read never reached, and binding it would be the nondeterminism SINGLE
+        // exists to refuse.
+        if (flagTruncated) {
+            throw new CaqlException(stmt.numLine(), stmt.strSource(), "one " + strWhat
+                    + " matched, but the read stopped at " + CNT_QUERY_MAX + " contracts, so"
+                    + " another may lie beyond it; narrow the parties");
         }
 
         String idContract = lstContract.get(0).idContract();
@@ -899,6 +958,107 @@ public final class Runner {
             return found.template();
 
         throw new CaqlException(stmt.numLine(), stmt.strSource(), ref.strProblem());
+    }
+
+
+    /**
+     * What an EXERCISE is sent to: the choice, and the id the command names.
+     *
+     * @param choice the choice, as the template or the interface declares it
+     * @param idTarget the template for its own choice, the INTERFACE for an
+     *                 inherited one - the Ledger API's `template_id` takes
+     *                 either, and an interface choice is addressed by its
+     *                 interface
+     */
+    private record Target(ChoiceInfo choice, DataId idTarget) {}
+
+
+    /**
+     * The template's own choice wins - ChoiceUnion's rule. An inherited choice
+     * is sent to its interface, and one that MORE THAN ONE implemented
+     * interface declares is refused unless VIA names the interface:
+     * TransferOffer implements TransferInstructionV1 and V2, both declare
+     * TransferInstruction_Accept with different arguments, and ChoiceUnion's
+     * name de-duplication keeps one of the two without saying which.
+     *
+     * A registry that answers no interface choices - the default - falls back
+     * to the union's own provenance, which is all a fake registry can offer.
+     */
+    private Target target(TemplateInfo template, Stmt.Exercise stmt) {
+        String nameChoice = stmt.nameChoice();
+
+        if (stmt.strInterface().isPresent()) {
+            DataId idInterface = namedInterface(template, stmt.strInterface().get(), stmt);
+            List<ChoiceInfo> lstOn = registry.interfaceChoices(idInterface);
+            List<String> lstName = new ArrayList<>();
+            for (ChoiceInfo info : lstOn) {
+                if (info.nameChoice().equals(nameChoice))
+                    return new Target(info, idInterface);
+                lstName.add(info.nameChoice());
+            }
+            throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + nameChoice
+                    + "' is not a choice on " + idInterface.shortName() + "; it offers "
+                    + (lstName.isEmpty() ? "nothing the registry holds" : String.join(", ", lstName)));
+        }
+
+        for (ChoiceInfo info : template.lstChoice()) {
+            if (info.nameChoice().equals(nameChoice) && !info.flagInherited())
+                return new Target(info, template.idTemplate());
+        }
+
+        List<DataId> lstDeclaring = new ArrayList<>();
+        ChoiceInfo choiceOnly = null;
+        for (DataId idInterface : template.lstInterface()) {
+            for (ChoiceInfo info : registry.interfaceChoices(idInterface)) {
+                if (info.nameChoice().equals(nameChoice)) {
+                    lstDeclaring.add(idInterface);
+                    choiceOnly = info;
+                }
+            }
+        }
+        if (lstDeclaring.size() > 1) {
+            List<String> lstShort = new ArrayList<>();
+            for (DataId idInterface : lstDeclaring) {
+                lstShort.add(idInterface.shortName());
+            }
+            throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + nameChoice
+                    + "' is declared by " + lstDeclaring.size() + " interfaces "
+                    + template.idTemplate().shortName() + " implements - "
+                    + String.join(", ", lstShort) + "; name one with VIA <interface>");
+        }
+        if (lstDeclaring.size() == 1)
+            return new Target(choiceOnly, lstDeclaring.get(0));
+
+        ChoiceInfo choice = choice(template, nameChoice, stmt);
+        return new Target(choice, choice.idInterface().orElse(template.idTemplate()));
+    }
+
+
+    /**
+     * VIA's reference, resolved against what the TARGET implements rather than
+     * against every interface on the ledger: module:entity, or the entity alone
+     * when only one implemented interface carries that name.
+     */
+    private static DataId namedInterface(TemplateInfo template, String strRef, Stmt stmt) {
+        List<DataId> lstHit = new ArrayList<>();
+        List<String> lstShort = new ArrayList<>();
+        for (DataId idInterface : template.lstInterface()) {
+            lstShort.add(idInterface.shortName());
+            if (strRef.equals(idInterface.toString()) || strRef.equals(idInterface.shortName()))
+                return idInterface;
+            if (strRef.equals(idInterface.nameEntity()))
+                lstHit.add(idInterface);
+        }
+        if (lstHit.size() == 1)
+            return lstHit.get(0);
+        if (lstHit.size() > 1) {
+            throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strRef + "' names "
+                    + lstHit.size() + " interfaces " + template.idTemplate().shortName()
+                    + " implements; write module:entity - " + String.join(", ", lstShort));
+        }
+        throw new CaqlException(stmt.numLine(), stmt.strSource(), template.idTemplate().shortName()
+                + " does not implement '" + strRef + "'; it implements "
+                + (lstShort.isEmpty() ? "no interface" : String.join(", ", lstShort)));
     }
 
 

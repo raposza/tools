@@ -226,7 +226,8 @@ public final class LocalNetWeb implements AutoCloseable {
         for (int cntSite = 0; cntSite < lstSite.size() && cntSite < lstPort.size(); cntSite++) {
             LocalNetUi.Site site = lstSite.get(cntSite);
             for (LocalNetUi.Vhost vhost : site.lstVhost()) {
-                if (vhost.strApp() == null)
+                // THE ALIASES ARE NOT PAGES: one check per page, in page order.
+                if (vhost.strApp() == null || vhost.flagAlias())
                     continue;
                 lstCheck.add(check(site, vhost, lstPort.get(cntSite).intValue()));
             }

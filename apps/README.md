@@ -2,8 +2,9 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Applications
 
-Three applications - `sandbox`, `jwtmint` and `workbench`. There is no unified
-launcher and no application containing all three.
+Two applications - `sandbox` and `workbench`. There is no unified launcher and
+no application containing both. The identity provider the Sandbox starts is
+Raposza OIDC, a separate repository, `github.com/raposza/OIDC`.
 
 **Today they build as one reactor.** The root `pom.xml` is a development
 aggregator and lists `platform`, `apps/sandbox` and `apps/workbench`; each

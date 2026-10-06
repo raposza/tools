@@ -54,6 +54,10 @@ class RunnerTest {
     private static final DataId ID_ACCOUNT = new DataId(PKG, "Main", "Account");
     private static final DataId ID_DEPOSIT_ARG = new DataId(PKG, "Main", "Deposit");
     private static final DataId ID_ARCHIVE_ARG = new DataId(PKG, "Main", "Archive");
+    private static final DataId ID_OFFER = new DataId(PKG, "Main", "Offer");
+    private static final DataId ID_HELD = new DataId(PKG, "Main", "Held");
+    private static final DataId ID_IFACE_V1 = new DataId("cccc3333", "Api.V1", "Instruction");
+    private static final DataId ID_IFACE_V2 = new DataId("dddd4444", "Api.V2", "Instruction");
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -131,6 +135,45 @@ class RunnerTest {
     // ------------------------------------------------------------ failures
 
     /** Sec. 9: ambiguity FAILS, listing the candidates. Nothing is sent. */
+    /**
+     * Progress - his instruction, 2026-10-04. Each statement is reported as it
+     * starts and as it ends, in order, with the entry the transcript carries.
+     *
+     * THE CONTROLS CAN FAIL: the second statement stops the run, so a sink told
+     * about the third - a loop that reported before deciding to stop - would
+     * record it; and a sink told only at the end would record the starts after
+     * the finishes.
+     */
+    @Test
+    void progressIsToldOfEachStatementRunAndOfNoneAfterTheStop() {
+        List<String> lstEvent = new ArrayList<>();
+        Runner runner = new Runner(new FakeClient(), registryTwoVersions(), RunConfig.ofRun());
+        runner.useProgress(new RunProgress_i() {
+
+            @Override
+            public void started(int numStmt, int cntStmt, Stmt stmt) {
+                lstEvent.add("start " + numStmt + "/" + cntStmt + " line " + stmt.numLine());
+            }
+
+
+            @Override
+            public void finished(int numStmt, int cntStmt, Entry entry) {
+                lstEvent.add("end " + numStmt + "/" + cntStmt + " " + entry.status());
+            }
+        });
+        String strScript = """
+                bank = ALLOCATE PARTY "Bank";
+                AS $bank CREATE Main:Account WITH { "owner": "$bank", "balance": "0.0" };
+                other = ALLOCATE PARTY "Other";
+                """;
+        Transcript transcript = runner.run(strScript, CaqlParser.parse(strScript));
+
+        assertEquals(2, transcript.lstEntry().size());
+        assertEquals(List.of("start 1/3 line 1", "end 1/3 COMMITTED",
+                "start 2/3 line 2", "end 2/3 FAILED_LOCALLY"), lstEvent);
+    }
+
+
     @Test
     void anAmbiguousTemplateFailsLocallyAndNamesBothPackages() {
         FakeClient client = new FakeClient();
@@ -562,6 +605,198 @@ class RunnerTest {
     }
 
 
+    /**
+     * '= null' on an Optional of a RECORD is a None test, not a comparison of
+     * the record - the Registry Utility's Holding, 'lock = null'. Refused before
+     * 2026-10-04 because the element type was asked first whether it compares.
+     */
+    @Test
+    void whereNullTestsAnOptionalRecordForNone() {
+        DataId idLock = new DataId(PKG, "Main", "Lock");
+        TemplateInfo held = new TemplateInfo(ID_HELD,
+                List.of(new FieldInfo("owner", new DamlType.Prim(PrimKind.PARTY)),
+                        new FieldInfo("lock", new DamlType.OptionalOf(new DamlType.Ref(idLock)))),
+                List.of(), List.of(), Optional.empty());
+        DamlValue.Rec lock = new DamlValue.Rec(idLock, List.of(
+                new DamlValue.Rec.Field("context", new DamlValue.Text("offer"))));
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_HELD;
+        client.lstActive = List.of(held("00free", new DamlValue.Opt(null)),
+                held("00locked", new DamlValue.Opt(lock)));
+
+        Transcript transcript = run("""
+                bob = ALLOCATE PARTY "Bob";
+                free = AS $bob FETCH Main:Held WHERE lock = null SINGLE;
+                """, client, new FakeRegistry(List.of(held)), RunConfig.ofRun());
+
+        assertTrue(transcript.flagOk(), transcript.json(mapper).toString());
+        assertEquals("00free",
+                transcript.lstEntry().get(1).resolved().get("contractId").asText());
+    }
+
+
+    /** A comparison with a VALUE on an Optional record is still refused, naming the type. */
+    @Test
+    void whereStillRefusesComparingAnOptionalRecordWithAValue() {
+        DataId idLock = new DataId(PKG, "Main", "Lock");
+        TemplateInfo held = new TemplateInfo(ID_HELD,
+                List.of(new FieldInfo("lock", new DamlType.OptionalOf(new DamlType.Ref(idLock)))),
+                List.of(), List.of(), Optional.empty());
+
+        Transcript transcript = run("""
+                bob = ALLOCATE PARTY "Bob";
+                AS $bob QUERY Main:Held WHERE lock = "x";
+                """, new FakeClient(), new FakeRegistry(List.of(held)), RunConfig.ofRun());
+
+        Entry entry = transcript.lstEntry().get(1);
+        assertEquals(RunStatus.FAILED_LOCALLY, entry.status());
+        assertTrue(entry.strError().orElseThrow().contains("cannot be compared"),
+                entry.strError().orElseThrow());
+    }
+
+
+    /** A Held contract: an owner and an optional lock. */
+    private static Contract held(String idContract, DamlValue lock) {
+        DamlValue.Rec payload = new DamlValue.Rec(ID_HELD, List.of(
+                new DamlValue.Rec.Field("owner", new DamlValue.Party("Bob::x")),
+                new DamlValue.Rec.Field("lock", lock)));
+        return new Contract(idContract, "ev", ID_HELD, payload, List.of(), List.of(),
+                Optional.empty(), "0", Optional.empty());
+    }
+
+
+    // ------------------------------------------------------------ FETCH ... WHERE ... SINGLE
+
+    /** The one contract the sieve leaves is bound - a holding among several. */
+    @Test
+    void fetchSingleWithWhereBindsTheOneSurvivor() {
+        FakeClient client = new FakeClient();
+        client.lstActive = List.of(account("00small", "Alice::x", "5.0"),
+                account("00large", "Bob::x", "20.0"));
+
+        Transcript transcript = run("""
+                bob = ALLOCATE PARTY "Bob";
+                big = AS $bob FETCH Main:Account WHERE balance > 10.0 SINGLE;
+                """, client, registry(), RunConfig.ofRun());
+
+        assertTrue(transcript.flagOk(), transcript.json(mapper).toString());
+        JsonNode resolved = transcript.lstEntry().get(1).resolved();
+        assertEquals("00large", resolved.get("contractId").asText());
+        assertEquals(2, resolved.get("countRead").asInt());
+        assertEquals(1, resolved.get("count").asInt());
+        assertEquals("balance > 10.0", resolved.get("where").asText());
+    }
+
+
+    /** Two survivors are refused: the active contract set has no order to pick by. */
+    @Test
+    void fetchSingleWithWhereRefusesTwoSurvivors() {
+        FakeClient client = new FakeClient();
+        client.lstActive = List.of(account("00small", "Alice::x", "5.0"),
+                account("00large", "Bob::x", "20.0"));
+
+        Transcript transcript = run("""
+                bob = ALLOCATE PARTY "Bob";
+                any = AS $bob FETCH Main:Account WHERE balance > 1.0 SINGLE;
+                """, client, registry(), RunConfig.ofRun());
+
+        Entry entry = transcript.lstEntry().get(1);
+        assertEquals(RunStatus.FAILED_LOCALLY, entry.status());
+        assertTrue(entry.strError().orElseThrow().contains("more than one"), entry.strError().get());
+    }
+
+
+    // ------------------------------------------------------------ inherited choices
+
+    /** Two interfaces declare Accept: refused, naming both and VIA, with nothing sent. */
+    @Test
+    void anInheritedChoiceTwoInterfacesDeclareIsRefusedNamingThem() {
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_OFFER;
+
+        Transcript transcript = run("""
+                p = ALLOCATE PARTY "P";
+                AS $p EXERCISE ON "00off" Accept;
+                """, client, registryOffer(), RunConfig.ofRun());
+
+        Entry entry = transcript.lstEntry().get(1);
+        assertEquals(RunStatus.FAILED_LOCALLY, entry.status());
+        String strError = entry.strError().orElseThrow();
+        assertTrue(strError.contains("Api.V1:Instruction") && strError.contains("Api.V2:Instruction"), strError);
+        assertTrue(strError.contains("VIA"), strError);
+        assertEquals(0, client.cntSubmit);
+    }
+
+
+    /** VIA picks the interface, and the command is addressed to it, not to the template. */
+    @Test
+    void viaSendsTheChoiceToTheNamedInterface() {
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_OFFER;
+
+        Transcript transcript = run("""
+                p = ALLOCATE PARTY "P";
+                AS $p EXERCISE ON "00off" Accept VIA Api.V2:Instruction;
+                """, client, registryOffer(), RunConfig.ofRun());
+
+        assertTrue(transcript.flagOk(), transcript.json(mapper).toString());
+        assertEquals(ID_IFACE_V2, ((Command.Exercise) client.cmdLast).idTemplate());
+        assertEquals(ID_IFACE_V2.toString(),
+                transcript.lstEntry().get(1).resolved().get("interfaceId").asText());
+    }
+
+
+    /** A choice only one interface declares needs no VIA and still goes to that interface. */
+    @Test
+    void anInheritedChoiceOneInterfaceDeclaresGoesToThatInterface() {
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_OFFER;
+
+        Transcript transcript = run("""
+                p = ALLOCATE PARTY "P";
+                AS $p EXERCISE ON "00off" Describe;
+                """, client, registryOffer(), RunConfig.ofRun());
+
+        assertTrue(transcript.flagOk(), transcript.json(mapper).toString());
+        assertEquals(ID_IFACE_V1, ((Command.Exercise) client.cmdLast).idTemplate());
+    }
+
+
+    /** The template's own choice keeps going to the template. */
+    @Test
+    void aTemplatesOwnChoiceIsStillSentToTheTemplate() {
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_OFFER;
+
+        Transcript transcript = run("""
+                p = ALLOCATE PARTY "P";
+                AS $p EXERCISE ON "00off" Archive;
+                """, client, registryOffer(), RunConfig.ofRun());
+
+        assertTrue(transcript.flagOk(), transcript.json(mapper).toString());
+        assertEquals(ID_OFFER, ((Command.Exercise) client.cmdLast).idTemplate());
+        assertFalse(transcript.lstEntry().get(1).resolved().has("interfaceId"));
+    }
+
+
+    /** VIA naming an interface the template does not implement is refused, listing what it does. */
+    @Test
+    void viaNamingAnInterfaceTheTemplateLacksIsRefused() {
+        FakeClient client = new FakeClient();
+        client.idTemplateContract = ID_OFFER;
+
+        Transcript transcript = run("""
+                p = ALLOCATE PARTY "P";
+                AS $p EXERCISE ON "00off" Accept VIA Api.V3:Instruction;
+                """, client, registryOffer(), RunConfig.ofRun());
+
+        Entry entry = transcript.lstEntry().get(1);
+        assertEquals(RunStatus.FAILED_LOCALLY, entry.status());
+        assertTrue(entry.strError().orElseThrow().contains("Api.V1:Instruction"), entry.strError().get());
+        assertEquals(0, client.cntSubmit);
+    }
+
+
     @Test
     void anEmptyScriptRunsAndProducesAnEmptyTranscript() {
         Transcript transcript = run("-- nothing here\n", new FakeClient(), registry(),
@@ -605,6 +840,31 @@ class RunnerTest {
     }
 
 
+    private static ChoiceInfo choiceOn(String nameChoice, Optional<DataId> idInterface) {
+        return new ChoiceInfo(nameChoice, true, new DamlType.Ref(ID_ARCHIVE_ARG),
+                new DamlType.Prim(PrimKind.UNIT), new ChoiceControllers.Unresolved("test fixture"),
+                idInterface);
+    }
+
+
+    /**
+     * An Offer implementing two interfaces that BOTH declare Accept - the
+     * shape of TransferOffer under TransferInstructionV1 and V2 - and one,
+     * V1, that also declares Describe. Its choice list is the union as
+     * ChoiceUnion builds it: Accept once, stamped with whichever came first.
+     */
+    private static TypeRegistry_i registryOffer() {
+        TemplateInfo offer = new TemplateInfo(ID_OFFER, List.of(),
+                List.of(choiceOn("Archive", Optional.empty()),
+                        choiceOn("Accept", Optional.of(ID_IFACE_V1)),
+                        choiceOn("Describe", Optional.of(ID_IFACE_V1))),
+                List.of(ID_IFACE_V1, ID_IFACE_V2), Optional.empty());
+        return new FakeRegistry(List.of(account(ID_ACCOUNT), offer), Map.of(
+                ID_IFACE_V1, List.of(choiceOn("Accept", Optional.empty()), choiceOn("Describe", Optional.empty())),
+                ID_IFACE_V2, List.of(choiceOn("Accept", Optional.empty()))));
+    }
+
+
     private static TypeRegistry_i registryTwoVersions() {
         return new FakeRegistry(List.of(account(ID_ACCOUNT),
                 account(new DataId("bbbb2222", "Main", "Account"))));
@@ -622,6 +882,12 @@ class RunnerTest {
 
         /** What an active-contract read answers; null for the one-contract default. */
         private List<Contract> lstActive;
+
+        /** The template a contract read reports. */
+        private DataId idTemplateContract = ID_ACCOUNT;
+
+        /** The last command submitted. */
+        private Command cmdLast;
 
 
         @Override
@@ -641,6 +907,7 @@ class RunnerTest {
         @Override
         public SubmitResult submit(Command cmd, SubmitContext ctx) {
             cntSubmit++;
+            cmdLast = cmd;
             if (exSubmit != null)
                 throw exSubmit;
             if (outcome != null)
@@ -670,8 +937,8 @@ class RunnerTest {
 
         @Override
         public Optional<Contract> contract(String idContract, List<String> lstPartyRead) {
-            return Optional.of(new Contract(idContract, "ev", ID_ACCOUNT,
-                    new DamlValue.Rec(ID_ACCOUNT, List.of()), List.of(), List.of(),
+            return Optional.of(new Contract(idContract, "ev", idTemplateContract,
+                    new DamlValue.Rec(idTemplateContract, List.of()), List.of(), List.of(),
                     Optional.empty(), "0", Optional.empty()));
         }
 
@@ -735,7 +1002,19 @@ class RunnerTest {
     }
 
 
-    private record FakeRegistry(List<TemplateInfo> lstTemplate) implements TypeRegistry_i {
+    private record FakeRegistry(List<TemplateInfo> lstTemplate,
+            Map<DataId, List<ChoiceInfo>> mapInterface) implements TypeRegistry_i {
+
+        FakeRegistry(List<TemplateInfo> lstTemplate) {
+            this(lstTemplate, Map.of());
+        }
+
+
+        @Override
+        public List<ChoiceInfo> interfaceChoices(DataId idInterface) {
+            return mapInterface.getOrDefault(idInterface, List.of());
+        }
+
 
         @Override
         public List<TemplateInfo> templates() {

@@ -12,7 +12,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.4.1</version>
+        <version>0.5.0</version>
         <relativePath>../../platform/pom.xml</relativePath>
     </parent>
 

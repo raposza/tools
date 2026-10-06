@@ -566,6 +566,15 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
     }
 
 
+    /**
+     * @return the upstream names the same pages also answer under -
+     *         `LocalNetUi` says why; empty before the web UIs are up
+     */
+    public List<LocalNetUi.Page> lstPageAliasWeb() {
+        return List.copyOf(LocalNetUi.lstPageAlias(lstSiteWeb));
+    }
+
+
     @Override
     public boolean isRunning() {
         return state == State.RUNNING;

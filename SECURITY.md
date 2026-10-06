@@ -36,9 +36,10 @@ and no backports; a fix arrives as a new version.
 
 ## When this was last reviewed
 
-**Reviewed 2026-09-27 for 0.4.1**, against the tree as it then stood -
-`docs/security-review.md` carries the result. The first review was
-2026-09-25, the second 2026-09-26 for 0.4.0.
+**Reviewed 2026-10-06 for 0.5.0**, against the tree as it stands -
+`docs/security-review.md` carries the result, with Raposza OIDC at 0.5.1. The
+first review was 2026-09-25, the second 2026-09-26 for 0.4.0, the third
+2026-09-27 for 0.4.1, the fourth 2026-10-05 for 0.5.0.
 
 ## The short statement of the model
 
@@ -63,7 +64,10 @@ network anyone else is on. Five consequences you should read before running it:
   window's default is JWKS against that provider; `--cli` without `--auth` is
   unauthenticated. A Canton 2.x participant started by the Sandbox binds its
   Ledger API and its Admin API on EVERY interface, and nothing here configures
-  authentication on its Admin API.
+  authentication on its Admin API. The window also serves local pages on
+  `127.0.0.1:31100` and forwards their `_ledger/` calls to the stack's JSON
+  Ledger API with whatever credential the caller sends, so that API answers
+  there too, exactly as authenticated as it is.
 * **Artefacts the Sandbox downloads are checked by TLS and nothing else, and
   then executed.** The toolchain installer, the SDK installer and the Splice
   bundle are fetched on a button press, unpacked and run. No digest or

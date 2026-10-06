@@ -12,6 +12,7 @@ import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
@@ -293,6 +294,67 @@ public final class CaqlPanel extends JPanel {
         // A RUN IS ASKED AND ANSWERED HERE - operator instruction. Leaving
         // `Parameters` in front would answer a run with a list that does not
         // say whether it worked.
+        tabsOut.setSelectedIndex(N_TAB_RESULT);
+    }
+
+
+    /** The lines of the run in flight that have ended, the head line first. */
+    private final List<String> lstProgress = new ArrayList<>();
+
+    /** The line of the statement running now, or null between statements. */
+    private String strProgressRunning;
+
+
+    /**
+     * Starts a run's progress in the results pane - his instruction,
+     * 2026-10-04: "When executing CaQL with 'Run' show progress line by line."
+     * The transcript replaces it when the run ends.
+     *
+     * @param strHead the first line
+     */
+    public void progressStart(String strHead) {
+        lstProgress.clear();
+        lstProgress.add(strHead);
+        lstProgress.add("");
+        strProgressRunning = null;
+        showProgress();
+    }
+
+
+    /**
+     * @param strLine the statement that is running now; its line is replaced
+     *        when it ends
+     */
+    public void progressRunning(String strLine) {
+        strProgressRunning = strLine;
+        showProgress();
+    }
+
+
+    /**
+     * @param strLine a statement that has ended
+     */
+    public void progressDone(String strLine) {
+        strProgressRunning = null;
+        lstProgress.add(strLine);
+        showProgress();
+    }
+
+
+    /**
+     * THE LAST LINE STAYS IN VIEW, so the pane follows the run rather than
+     * sitting on its first statement.
+     */
+    private void showProgress() {
+        StringBuilder buf = new StringBuilder();
+        for (String strLine : lstProgress) {
+            buf.append(strLine).append('\n');
+        }
+        if (strProgressRunning != null)
+            buf.append(strProgressRunning).append('\n');
+        this.strRawResult = buf.toString();
+        paint();
+        areaResult.setCaretPosition(areaResult.getDocument().getLength());
         tabsOut.setSelectedIndex(N_TAB_RESULT);
     }
 

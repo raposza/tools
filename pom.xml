@@ -20,7 +20,7 @@
 
     <groupId>com.raposza</groupId>
     <artifactId>raposza-aggregator</artifactId>
-    <version>0.4.1</version>
+    <version>0.5.0</version>
     <packaging>pom</packaging>
     <name>raposza</name>
 
@@ -33,5 +33,85 @@
              `raposza_oidc.md` section 4. -->
         <module>apps/workbench</module>
     </modules>
+
+    <properties>
+        <!-- The lifecycle plugins at the versions spring-boot-dependencies
+             3.5.16 manages, so the Spring Boot builds and this one run one
+             set, on the workstation and in CI alike. Stated, not taken from
+             whichever Maven runs the build. -->
+        <maven.clean.version>3.4.1</maven.clean.version>
+        <maven.install.version>3.1.4</maven.install.version>
+        <maven.deploy.version>3.1.4</maven.deploy.version>
+        <!-- Run by no gate here. 3.22.0 since 2026-10-05, from 3.3, the
+             version Maven 3.8.7 binds: 3.3 put commons-collections 3.2.1,
+             commons-beanutils 1.7.0 and Velocity 1.5 into the resolved plugin
+             set - dependency report 20261005_0940Z. -->
+        <maven.site.version>3.22.0</maven.site.version>
+        <!-- help:evaluate reads the version in .github/workflows/release.yml. -->
+        <maven.help.version>3.5.1</maven.help.version>
+        <maven.enforcer.version>3.6.3</maven.enforcer.version>
+    </properties>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${maven.clean.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven.install.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven.deploy.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-help-plugin</artifactId>
+                    <version>${maven.help.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${maven.site.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <!-- SUPPLY CHAIN. No repository in this pom or its parents, every
+                 plugin the clean and default lifecycles run carries a stated
+                 version, and no dependency version moves on its own. Tightened,
+                 never weakened to make a build pass. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven.enforcer.version}</version>
+                <executions>
+                    <execution>
+                        <id>supply-chain</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireNoRepositories/>
+                                <requirePluginVersions/>
+                                <banDynamicVersions>
+                                    <allowSnapshots>false</allowSnapshots>
+                                </banDynamicVersions>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

@@ -38,7 +38,7 @@ import java.util.Set;
  *
  * <h2>Why a request and not the seed setting</h2>
  *
- * `raposza.jwtmint.users` and `raposza.jwtmint.clients` are read only when
+ * `raposza.oidc.users` and `raposza.oidc.clients` are read only when
  * their files do not exist yet, so on any machine that has run the provider
  * once they change nothing. The provider's own write endpoints are the one
  * route that works on every machine, and they are guarded - so each request

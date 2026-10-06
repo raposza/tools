@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -39,6 +40,26 @@ class CaqlResultsTest {
 
     private static final String ID_CT = "00cda4cdbc5d57ff41b8b0ef6f9e2ccc04c07fceeff7ceb5ae98c1"
             + "aa85ca981cc8ca031220e922ec9e84d3462bafb5ec2674699ccce4266f39b483d79f9bd96d619cd7b655";
+
+
+    /**
+     * A progress line - his instruction, 2026-10-04: where the run is, the
+     * line in the editor, how the statement ended, how long it took, and the
+     * statement's first line.
+     *
+     * THE CONTROLS CAN FAIL: the statement is laid out over two lines, so a
+     * line that carried the whole source would hold the payload; and the
+     * time is 1234 ms, so a format that followed the machine's locale would
+     * write 1,23 on a Portuguese one.
+     */
+    @Test
+    void aProgressLineNamesTheStatementItsOutcomeAndItsTime() {
+        Entry entry = new Entry("id", 26,
+                "treasury = ALLOCATE PARTY\n  \"GlobalBank-Treasury\"", RunStatus.COMMITTED,
+                Optional.empty(), null, Optional.empty(), Optional.empty(), Optional.empty());
+        assertEquals("[  3/122]  line 26    committed         1.23 s treasury = ALLOCATE PARTY",
+                CaqlResults.strProgressDone(3, 122, entry, 1234));
+    }
 
 
     @Test

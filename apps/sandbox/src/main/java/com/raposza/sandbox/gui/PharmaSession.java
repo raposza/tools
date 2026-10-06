@@ -674,7 +674,8 @@ public final class PharmaSession {
                 settingsNow.nPortPostgres(), settingsNow.nSecondsReady(),
                 settingsNow.flagOfferAviation(), false, settingsNow.strUrlOidc(),
                 settingsNow.nPortUiFirst(),
-                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice());
+                settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice(),
+                settingsNow.nPortRawar());
         try {
             RaposzaSettings.store(settingsNew);
             say.accept("The Pharma offer is off. The Settings tab turns it back on.");

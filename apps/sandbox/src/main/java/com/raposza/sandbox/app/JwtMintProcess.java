@@ -14,6 +14,8 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -62,7 +64,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * is not told one. That is right for a mint anything on the network can reach
  * and wrong for this one, which is only ever reached on the loopback address -
  * the discovery endpoint refuses to bind anything else. So the child is started
- * with `--raposza.jwtmint.issuer` set to {@link #strUrlBase}, and the issuer
+ * with `--raposza.oidc.issuer` set to {@link #strUrlBase}, and the issuer
  * in a token, the issuer in the discovery document and the url the Sandbox
  * publishes are one string.
  *
@@ -90,16 +92,42 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public final class JwtMintProcess {
 
     /** Point this at a jar to override the search. */
-    public static final String STR_PROP_JAR = "raposza.jwtmint.jar";
+    public static final String STR_PROP_JAR = "raposza.oidc.jar";
+
+    /**
+     * {@link #STR_PROP_JAR} until 0.4.x, REFUSED from 0.5.0 - the operator's
+     * decision of 2026-10-05 for every `raposza.jwtmint` name. Ignoring it would
+     * start a different jar from the one the developer named.
+     */
+    public static final String STR_PROP_JAR_OLD = "raposza.jwtmint.jar";
 
     /** Where the child JVM keeps its JWKS. It reads no settings file. */
-    public static final String STR_PROP_DIR_KEYS = "raposza.jwtmint.dir-keys";
+    public static final String STR_PROP_DIR_KEYS = "raposza.oidc.dir-keys";
 
     /** What the child JVM puts in `iss` and in its discovery document. */
-    public static final String STR_PROP_ISSUER = "raposza.jwtmint.issuer";
+    public static final String STR_PROP_ISSUER = "raposza.oidc.issuer";
 
     /** The credential in front of the provider's write paths and its web UI. */
-    public static final String STR_PROP_ADMIN_PASSWORD = "raposza.jwtmint.admin.password";
+    public static final String STR_PROP_ADMIN_PASSWORD = "raposza.oidc.admin.password";
+
+    /**
+     * WHAT TOMCAT'S ACCESS LOG VALVE WRITES, one request per line - the OIDC
+     * tab's Access log, his instruction of 2026-10-04. The remote address, the
+     * method, the path, the status, the query, the request's Origin, the
+     * response's Access-Control-Allow-Origin - the two a CORS refusal is read
+     * from - and the User-Agent, separated by `|`; the User-Agent last, being
+     * the one field a client writes freely. No time taken: "15 ms is useless".
+     * `%{xxx}i` is a request header and `%{xxx}o` a response header, both in
+     * Tomcat's AccessLogValve documentation. `OidcAccess` reads it back.
+     */
+    public static final String STR_ACCESS_PATTERN =
+            "%a|%m|%U|%s|%q|%{Origin}i|%{Access-Control-Allow-Origin}o|%{User-Agent}i";
+
+    /** The access log's file name, `prefix` + `suffix` with rotation off. */
+    public static final String STR_FILE_ACCESS = "access.log";
+
+    /** The directory under the Raposza home the access logs go in, one per mint port. */
+    public static final String STR_DIR_ACCESS = "oidc-access";
 
     /** The provider's own default admin name, which the Sandbox keeps. */
     public static final String STR_ADMIN_USER = "admin";
@@ -224,7 +252,7 @@ public final class JwtMintProcess {
         lstOut.add("--" + STR_PROP_DIR_KEYS + "=" + RaposzaSettings.current().dirMintKeys());
         // PINNED TO THE ADDRESS THE MINT IS REACHED ON. Left to resolve itself
         // it takes the machine's routable address, so a token minted here said
-        // `iss: http://192.168.0.170:33301` while the discovery document the
+        // `iss: http://<LAN address>:33301` while the discovery document the
         // Sandbox publishes said `127.0.0.1`. OpenID Connect Discovery 1.0
         // requires a document's issuer to equal the origin it was fetched from,
         // and a client validating `iss` against the published issuer refuses
@@ -236,6 +264,71 @@ public final class JwtMintProcess {
         // sends it as HTTP Basic.
         lstOut.add("--" + STR_PROP_ADMIN_PASSWORD + "=" + STR_PASSWORD);
         return lstOut;
+    }
+
+
+    /**
+     * The provider's access log, switched on from outside it.
+     *
+     * SPRING BOOT'S OWN PROPERTIES, `server.tomcat.accesslog.*` - present on
+     * `ServerProperties.Tomcat.Accesslog` in 3.5 - so the provider's code is
+     * not touched and no new release of it is needed. ROTATION OFF, so the
+     * file is `access.log` rather than one named for the date and Tomcat's
+     * `fileDateFormat` is ignored; BUFFERING OFF, so a line is written when the
+     * request ends rather than when a buffer fills, which is what a pane
+     * following the file needs. Tomcat documents both: "If set to false, then
+     * this file is never rotated and fileDateFormat is ignored" and "access
+     * logging will be written after each request".
+     *
+     * @param dirLog where the file goes, absolute
+     * @return the Spring arguments; never empty
+     */
+    public static List<String> lstArgAccessLog(Path dirLog) {
+        List<String> lstOut = new ArrayList<>();
+        lstOut.add("--server.tomcat.accesslog.enabled=true");
+        lstOut.add("--server.tomcat.accesslog.directory=" + dirLog.toAbsolutePath());
+        lstOut.add("--server.tomcat.accesslog.prefix=access");
+        lstOut.add("--server.tomcat.accesslog.suffix=.log");
+        lstOut.add("--server.tomcat.accesslog.rotate=false");
+        lstOut.add("--server.tomcat.accesslog.buffered=false");
+        lstOut.add("--server.tomcat.accesslog.pattern=" + STR_ACCESS_PATTERN);
+        return lstOut;
+    }
+
+
+    /**
+     * WHERE THE PROVIDER THIS WINDOW STARTS WRITES ITS ACCESS LOG: under the
+     * Raposza home, one directory per mint port, so two windows on two ports
+     * do not share one file.
+     *
+     * NOT THE TEMPORARY DIRECTORY, since 2026-10-05. The log carries `%q`, and
+     * a mint for a `unsafe-jwt-hmac-256` participant carries that
+     * participant's secret in its query - so the file holds the secret. Under
+     * `/tmp` its name was predictable, it took the umask, and anyone on the
+     * machine could create the directory first. Here it sits beside the
+     * profiles that hold the same secret, and {@link #restrictToOwner} closes
+     * the directory as well.
+     *
+     * @return the file, whether or not it exists
+     */
+    public static Path fileAccessLog() {
+        return RaposzaSettings.current().dirHome().resolve(STR_DIR_ACCESS)
+                .resolve(String.valueOf(nPort())).resolve(STR_FILE_ACCESS);
+    }
+
+
+    /**
+     * Owner-only, where the file system has POSIX permissions; elsewhere -
+     * Windows - the directory sits under the user's own profile and is left
+     * as it is.
+     *
+     * @param dir a directory this process created
+     * @throws IOException when the permissions cannot be set
+     */
+    static void restrictToOwner(Path dir) throws IOException {
+        if (!Files.getFileStore(dir).supportsFileAttributeView(PosixFileAttributeView.class))
+            return;
+        Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"));
     }
 
 
@@ -546,7 +639,7 @@ public final class JwtMintProcess {
      *
      * THE LIFETIME IS SENT, and this is the one place the two spellings differ
      * in why. The mint's own default is 86400 s, from
-     * `raposza.jwtmint.ttl-seconds`, and a participant below
+     * `raposza.oidc.ttl-seconds`, and a participant below
      * `AuthOverlay.VER_FLOOR_TOKEN_LIFE` refuses anything over 240 s outright -
      * so a request that left it out would authenticate nowhere on exactly the
      * column this exists for.
@@ -560,7 +653,7 @@ public final class JwtMintProcess {
      * 6749 section 2.3.1 prefers - as HTTP Basic, not as body parameters - and
      * `OAuthController.mapTokenForm` reads `client_id` only as a
      * `@RequestParam`. So the client id arrived as null, the subject fell back
-     * to `raposza.jwtmint.default-subject`, and Canton refused every call
+     * to `raposza.oidc.default-subject`, and Canton refused every call
      * with `PERMISSION_DENIED ... UserNotFound(raposza)` on a token whose
      * signature, scope and lifetime it had just accepted. `sub` wins over
      * `client_id` in that controller and reaches it whatever scribe does with
@@ -910,6 +1003,12 @@ public final class JwtMintProcess {
         if (isRunning() || isExternal())
             return;
 
+        String strOld = System.getProperty(STR_PROP_JAR_OLD);
+        if (strOld != null && !strOld.isBlank()) {
+            throw new IllegalStateException("-D" + STR_PROP_JAR_OLD + " was renamed -D" + STR_PROP_JAR
+                    + " in 0.5.0 and the old name is refused.");
+        }
+
         Path fileFound = fileJarFound();
         if (fileFound == null) {
             throw new IllegalStateException("no " + STR_GLOB_JAR + " was found."
@@ -926,6 +1025,21 @@ public final class JwtMintProcess {
         lstCmd.add("-jar");
         lstCmd.add(fileFound.toString());
         lstCmd.addAll(lstArgSpring());
+        // A FRESH FILE PER START. The previous run's requests are not this
+        // run's, and the pane following it starts at the end of whatever is
+        // there. A directory that cannot be made costs the access log and
+        // nothing else.
+        Path fileAccess = fileAccessLog();
+        try {
+            Files.createDirectories(fileAccess.getParent());
+            restrictToOwner(fileAccess.getParent().getParent());
+            restrictToOwner(fileAccess.getParent());
+            Files.deleteIfExists(fileAccess);
+            lstCmd.addAll(lstArgAccessLog(fileAccess.getParent()));
+        }
+        catch (IOException ex) {
+            sinkLine.accept("no access log: " + ex.getMessage());
+        }
 
         ProcessBuilder bld = new ProcessBuilder(lstCmd);
         // ONE STREAM. The tab shows what the service printed, and a reader

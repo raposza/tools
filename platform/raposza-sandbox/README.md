@@ -3,7 +3,7 @@
 # raposza-sandbox
 
 What a sandbox IS: the STACK. Two of them - a 3.x
-`SandboxStack` and a 2.x `Sandbox2xStack` - plus `CantonSandbox`, the sandbox
+`SandboxStack` and a 2.x `Sandbox2xStack` - plus the sandbox
 spec, the launcher choice, and the process that runs Canton's own `sandbox`
 subcommand.
 

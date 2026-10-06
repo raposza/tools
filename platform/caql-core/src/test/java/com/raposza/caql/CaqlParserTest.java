@@ -190,6 +190,42 @@ class CaqlParserTest {
     }
 
 
+    /** VIA names the interface an inherited choice is sent to; it is optional. */
+    @Test
+    void viaNamesTheInterfaceAndIsOptional() {
+        Stmt.Exercise via = assertInstanceOf(Stmt.Exercise.class, CaqlParser.parse(
+                "AS $a EXERCISE ON $c Accept VIA Api.V1:Instruction WITH {};").get(0));
+        assertEquals("Accept", via.nameChoice());
+        assertEquals("Api.V1:Instruction", via.strInterface().orElseThrow());
+        assertTrue(via.nodeWith().isPresent());
+
+        Stmt.Exercise plain = assertInstanceOf(Stmt.Exercise.class,
+                CaqlParser.parse("AS $a EXERCISE ON $c Accept;").get(0));
+        assertTrue(plain.strInterface().isEmpty());
+
+        CaqlException ex = assertThrows(CaqlException.class,
+                () -> CaqlParser.parse("AS $a EXERCISE ON $c Accept VIA;"));
+        assertTrue(ex.getMessage().contains("VIA"), ex.getMessage());
+    }
+
+
+    /** FETCH ... SINGLE takes the QUERY's WHERE; without one it is unchanged. */
+    @Test
+    void fetchSingleTakesAWhere() {
+        Stmt.FetchSingle stmt = assertInstanceOf(Stmt.FetchSingle.class, CaqlParser.parse(
+                "h = AS $a FETCH M:Holding WHERE owner = $a AND lock = null SINGLE;").get(0));
+        assertEquals("M:Holding", stmt.strTemplate());
+        assertTrue(stmt.clauseWhere().orElseThrow().str().contains("owner"));
+
+        assertTrue(assertInstanceOf(Stmt.FetchSingle.class,
+                CaqlParser.parse("h = AS $a FETCH M:Holding SINGLE;").get(0)).clauseWhere().isEmpty());
+
+        CaqlException ex = assertThrows(CaqlException.class,
+                () -> CaqlParser.parse("h = AS $a FETCH M:Holding WHERE owner = $a;"));
+        assertTrue(ex.getMessage().contains("SINGLE"), ex.getMessage());
+    }
+
+
     @Test
     void aPackageQualifiedTemplateReferenceSurvivesWhole() {
         Stmt.Query query = assertInstanceOf(Stmt.Query.class,

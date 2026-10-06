@@ -155,6 +155,9 @@ public final class FieldHelp {
 
     public static final String KEY_SET_PORT_DISCOVERY = "port.discovery";
 
+    /** Settings tab. The RAWAR server - `rawar.md` section 5. */
+    public static final String KEY_SET_PORT_RAWAR = "port.rawar";
+
     public static final String KEY_SET_PORT_FIRST = "default.port.first";
 
     /** Settings tab. This application's own, and no vendor documents it. */
@@ -528,6 +531,23 @@ public final class FieldHelp {
                 + PortClass.ADMIN.nHigh() + " - an administrative port. It"
                 + " belongs to the application rather than to any one stack: it"
                 + " stays put while stacks come and go.",
+                null, null);
+
+        put(KEY_SET_PORT_RAWAR,
+                "Port the RAWAR server listens on.",
+                "The RAWAR server serves the web pages you develop against this"
+                + " stack. Every directory under <Raposza directory>/rawars is one"
+                + " RAWAR, served at the mount its rawar.json names - / when it has"
+                + " none. Edit a page and reload the browser; nothing is restarted.\n\n"
+                + "Under every mount the server answers two paths of its own:"
+                + " _env.json, how to sign in and where the ledger is, and _ledger/,"
+                + " this stack's JSON Ledger API on the same origin, so a page"
+                + " needs no address and no CORS.\n\n"
+                + "It binds when the window opens and stays up while stacks come and"
+                + " go; with no stack running _ledger/ answers 503.\n\n"
+                + "Required, " + PortClass.UI.nLow() + "-" + PortClass.UI.nHigh()
+                + " - a web UI port. Keep it clear of the first web UI port and the"
+                + " " + (2 * LocalNetPorts.N_STRIDE_UI) + " above it.",
                 null, null);
 
         put(KEY_SET_URL_OIDC,

@@ -68,6 +68,9 @@ public final class EnvSubstitution implements Substitution_i {
      * reaching into it for a different field is refused too. That is the
      * intended reading: the statement that produced it no longer describes the
      * ledger.
+     *
+     * {@code $p.asText} - a party read as its id, typed TEXT - needs no
+     * registry, so it is answered without one; see {@link FieldPath}.
      */
     @Override
     public Optional<Bound> lookup(String name) {
@@ -88,12 +91,13 @@ public final class EnvSubstitution implements Substitution_i {
         if (numDot < 0)
             return Optional.of(new Bound(binding.value(), binding.type()));
 
-        if (registry == null) {
+        String strPath = name.substring(numDot + 1);
+        if (registry == null && !FieldPath.STR_AS_TEXT.equals(strPath)) {
             throw new CaqlException(numLine, strSource, "'$" + name + "' projects into a record"
                     + " and no registry is available to say what type that field is");
         }
 
-        List<String> lstField = List.of(name.substring(numDot + 1).split("\\."));
+        List<String> lstField = List.of(strPath.split("\\."));
         return Optional.of(FieldPath.project(binding, lstField, registry, "$" + name, numLine,
                 strSource));
     }

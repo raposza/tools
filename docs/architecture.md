@@ -17,14 +17,16 @@ raposza/                    development aggregator, packaging pom
     raposza-spi/             translation SPI and capability declarations
     raposza-auth/            token and key material
     raposza-cache/           PackageCache_i on the filesystem, and its JSON
+    raposza-rawar/           RAWAR, the RAposza Web ARchive: a web directory's canonical
+                            hash, its descriptor, the .rawar file. Knows no Canton
     raposza-lf/              the Daml-LF archive reader, the AST mapping, TypeRegistry_i
     raposza-wire/            protobuf Value conversion, descriptor-driven, both ways
     raposza-admin/           the Canton admin API, spoken through descriptors
     raposza-resolve/         Resolver_i, the probe chain, and template references
-    raposza-render/          ValueRenderer_i, the JSON coercer, CommandEmitter_i
+    raposza-render/          ValueRenderer_i, the JSON coercer
     caql-core/              the language: parser, runner, transcript, audit log
     raposza-target-2x/       Ledger API v1 client  (Canton 2.9, 2.10)
-    raposza-target-3x/       Ledger API v2 client  (Canton 3.4, 3.5) - a stub
+    raposza-target-3x/       Ledger API v2 client  (Canton 3.4, 3.5)
     raposza-test-idp/        local test identity provider
     raposza-runtime/         process supervision, embedded PostgreSQL, free ports, native Splice LocalNet
     raposza-canton/          installations, config, overlays, node launching, DARs, PQS
@@ -34,7 +36,6 @@ raposza/                    development aggregator, packaging pom
                             reactor, imported by nothing
   apps/
     sandbox/                 headless entry point and the window
-    jwtmint/                 the local JWKS mint
     workbench/               Swing front end, main, and the headless script runner
   docs/                     this document
 ```
@@ -46,7 +47,7 @@ dependency management and no compiler release, and its first class then fails
 for a reason that has nothing to do with the class.
 
 **The reactor is a development aggregator and not the release structure.** The
-root `pom.xml` lists `platform` and all three applications, and each application
+root `pom.xml` lists `platform` and both applications, and each application
 takes `platform/pom.xml` as its parent. The intended structure is one
 independent build per application, each consuming released platform artefacts
 through `raposza-bom`. Nothing has been released, so the BOM is empty and the
@@ -263,9 +264,10 @@ This is measured behaviour on both Ledger API generations, not an assumption.
 Without the flag, labels and identifiers are both absent - so `verbose` must be
 set on every read, and forgetting it fails silently rather than loudly.
 
-`CommandEmitter_i` emits a reproducible grpcurl, console, JSON API or Daml
-Script invocation for any command the GUI submits. Every GUI action must remain
-copyable and graduatable into a script.
+A command emitter - a reproducible grpcurl, console, JSON API or Daml Script
+invocation for any command the GUI submits - is NOT built. The interface that
+named it, `CommandEmitter_i`, had no implementation and was removed on
+2026-10-05.
 
 ## 7. Resolution
 

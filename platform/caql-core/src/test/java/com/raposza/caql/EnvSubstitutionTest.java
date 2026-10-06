@@ -11,6 +11,7 @@ import com.raposza.api.model.DamlType;
 import com.raposza.api.model.DamlValue;
 import com.raposza.api.model.PrimKind;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -75,6 +76,50 @@ class EnvSubstitutionTest {
     @Test
     void anEnvironmentIsRequired() {
         assertThrows(IllegalArgumentException.class, () -> new EnvSubstitution(null, 1, "s"));
+    }
+
+
+    /**
+     * {@code .asText} is the explicit Party-to-Text conversion - his choice of
+     * 2026-10-04. The id is the party's own, unchanged, and the type is TEXT so
+     * the coercer accepts it where a Text field holds a party id.
+     */
+    @Test
+    void asTextReadsAPartyAsItsIdTypedText() {
+        Substitution_i.Bound bound = new EnvSubstitution(env(), 3, "s").lookup("alice.asText")
+                .orElseThrow();
+
+        assertEquals(new DamlValue.Text("Alice::1220ab"), bound.value());
+        assertEquals(new DamlType.Prim(PrimKind.TEXT), bound.type());
+    }
+
+
+    /** On anything that is not a party or a record it is refused, naming what it hit. */
+    @Test
+    void asTextOnAContractIdIsRefused() {
+        CaqlException ex = assertThrows(CaqlException.class,
+                () -> new EnvSubstitution(env(), 4, "s").lookup("acct.asText"));
+
+        assertEquals(4, ex.numLine());
+        assertTrue(ex.getMessage().contains("asText"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("a contract id"), ex.getMessage());
+    }
+
+
+    /**
+     * After it the value is text, and a dot into text is refused like any
+     * scalar. No registry is consulted on the way: neither step reads a field type.
+     */
+    @Test
+    void nothingProjectsThroughAsText() {
+        Binding binding = Env.of("alice", new DamlValue.Party("Alice::1220ab"),
+                new DamlType.Prim(PrimKind.PARTY), 2, null);
+        CaqlException ex = assertThrows(CaqlException.class,
+                () -> FieldPath.project(binding, List.of("asText", "x"), null, "$alice.asText.x", 5,
+                        "s"));
+
+        assertEquals(5, ex.numLine());
+        assertTrue(ex.getMessage().contains("a scalar"), ex.getMessage());
     }
 
 }

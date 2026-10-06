@@ -8,6 +8,7 @@ import com.raposza.api.model.DamlType;
 import com.raposza.api.model.DamlValue;
 import com.raposza.api.model.DataShape;
 import com.raposza.api.model.FieldInfo;
+import com.raposza.api.model.PrimKind;
 
 import java.util.List;
 
@@ -33,6 +34,21 @@ import java.util.List;
  * refusal names the type it hit so the operator is not left guessing which
  * field was the wrong one.
  *
+ * <h2>The one conversion: {@code .asText} on a party - his choice, 2026-10-04</h2>
+ *
+ * A Daml field typed {@code Text} sometimes holds a party id - the Registry
+ * Utility's {@code Credential} claim {@code subject} is compared against
+ * {@code partyToText holder}. A PARTY binding is refused there, deliberately:
+ * an implicit Party-to-Text rule would let a party land in any label without a
+ * word. So the conversion is EXPLICIT, asked for by name at the call site:
+ * {@code $treasury.asText} is that party's id, typed TEXT.
+ *
+ * It applies ONLY where the value reached is a party. On a record the segment
+ * is an ordinary field name, so a record that declares a field {@code asText}
+ * projects it as before; on anything else it is refused, naming what it hit.
+ * After it the value is text, so a further segment is refused like any other
+ * dot into a scalar.
+ *
  * <h2>Why it is not on Env</h2>
  *
  * {@link Env} is the run's bindings and nothing else - it holds no registry and
@@ -42,6 +58,12 @@ import java.util.List;
  * Author Claude/bentzn
  */
 public final class FieldPath {
+
+    /** The segment that reads a PARTY as its id, typed TEXT - see the class comment. */
+    public static final String STR_AS_TEXT = "asText";
+
+    private static final DamlType TYPE_TEXT = new DamlType.Prim(PrimKind.TEXT);
+
 
     private FieldPath() {
     }
@@ -66,6 +88,17 @@ public final class FieldPath {
         DamlType type = binding.type();
 
         for (String nameField : lstField) {
+            if (STR_AS_TEXT.equals(nameField) && value instanceof DamlValue.Party party) {
+                value = new DamlValue.Text(party.idParty());
+                type = TYPE_TEXT;
+                continue;
+            }
+
+            if (STR_AS_TEXT.equals(nameField) && !(value instanceof DamlValue.Rec)) {
+                throw new CaqlException(numLine, strSource, "'" + strRef + "': ." + STR_AS_TEXT
+                        + " reads a party as its id, and this is " + describe(value));
+            }
+
             if (!(value instanceof DamlValue.Rec rec)) {
                 throw new CaqlException(numLine, strSource, "'" + strRef + "' reaches '"
                         + nameField + "' through " + describe(value) + ", which has no fields;"

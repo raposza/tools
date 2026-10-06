@@ -395,7 +395,8 @@ public final class SandboxForm extends JPanel {
         cmbShape.addActionListener(evt -> applyAuthRows());
 
         apply(options);
-        rescan(options);
+        // THE FIRST READ IS THE PREFETCH'S - A-63 (b). `OpenPrefetch` says why.
+        rescan(options, false);
     }
 
 
@@ -405,9 +406,19 @@ public final class SandboxForm extends JPanel {
      * @param options what to select, or null to keep what is selected
      */
     public void rescan(SandboxOptions options) {
+        rescan(options, true);
+    }
+
+
+    /**
+     * @param options what to select, or null to keep what is selected
+     * @param flagFresh true to read the disk now; false for the window's first
+     *        read, which takes what {@link OpenPrefetch} read
+     */
+    private void rescan(SandboxOptions options, boolean flagFresh) {
         flagAdjusting = true;
         try {
-            rescanNow(options);
+            rescanNow(options, flagFresh);
         }
         finally {
             flagAdjusting = false;
@@ -419,7 +430,7 @@ public final class SandboxForm extends JPanel {
     }
 
 
-    private void rescanNow(SandboxOptions options) {
+    private void rescanNow(SandboxOptions options, boolean flagFresh) {
         Object objSelected = cmbCanton.getSelectedItem();
         CantonInstallation selected = objSelected instanceof CantonInstallation
                 ? (CantonInstallation) objSelected : null;
@@ -432,7 +443,8 @@ public final class SandboxForm extends JPanel {
         // selection is unchanged: still the newest that can start.
         // LESS A JAR-LESS TWIN of a version that has a jar elsewhere - D-837.
         List<CantonInstallation> lstInstall = new ArrayList<>(
-                CantonInstallations.lstShown(SandboxService.lstCanton()));
+                CantonInstallations.lstShown(flagFresh ? SandboxService.rescanCanton()
+                        : OpenPrefetch.lstCanton()));
         Collections.reverse(lstInstall);
 
         CantonInstallation startable = null;
@@ -498,6 +510,16 @@ public final class SandboxForm extends JPanel {
         for (String strVersion : lstVersion) {
             mapShown.put(strVersion, SpliceInstallations.strShown(strVersion));
         }
+        useSplice(lstVersion, mapShown);
+    }
+
+
+    /**
+     * @param lstVersion the staged Splice versions, newest first
+     * @param mapShown each version as the dropdown shows it, already read - at
+     *        open by {@link OpenPrefetch}, A-63 (b)
+     */
+    public void useSplice(List<String> lstVersion, Map<String, String> mapShown) {
         cmbCanton.setRenderer(new DefaultListCellRenderer() {
 
             private static final long serialVersionUID = 1L;

@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -145,7 +146,7 @@ class RaposzaSettingsTest {
         assertEquals(30010, RaposzaSettings.read(file).nPortFirst());
 
         Properties propsBack = new Properties();
-        try (java.io.InputStream in = Files.newInputStream(file)) {
+        try (InputStream in = Files.newInputStream(file)) {
             propsBack.load(in);
         }
         assertEquals("30010", propsBack.getProperty(RaposzaSettings.STR_KEY_PORT_FIRST));
@@ -323,6 +324,41 @@ class RaposzaSettingsTest {
     }
 
 
+    /**
+     * THE RAWAR PORT IS A WEB UI PORT - `rawar.md` section 5. 31100 by default;
+     * a file from before it carries nothing and reads as the default; one out
+     * of 31xxx reads as the default and is rewritten; and it survives a write
+     * of anything else.
+     */
+    @Test
+    void the_rawar_port_is_a_web_ui_port_and_survives_a_round_trip(@TempDir Path dirTmp)
+            throws IOException {
+        assertEquals(31100, RaposzaSettings.ofDefaults().nPortRawar());
+        assertEquals(RaposzaSettings.ofDefaults().dirHome().resolve("rawars"),
+                RaposzaSettings.ofDefaults().dirRawars());
+
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_PORT_MINT, "32600");
+        assertEquals(31100, RaposzaSettings.read(write(dirTmp, props)).nPortRawar());
+
+        props.setProperty(RaposzaSettings.STR_KEY_PORT_RAWAR, "32003");
+        Path file = write(dirTmp, props);
+        assertEquals(31100, RaposzaSettings.read(file).nPortRawar());
+        Properties propsBack = new Properties();
+        try (InputStream in = Files.newInputStream(file)) {
+            propsBack.load(in);
+        }
+        assertEquals("31100", propsBack.getProperty(RaposzaSettings.STR_KEY_PORT_RAWAR));
+
+        props.setProperty(RaposzaSettings.STR_KEY_PORT_RAWAR, "31234");
+        RaposzaSettings settings = RaposzaSettings.read(write(dirTmp, props));
+        assertEquals(31234, settings.nPortRawar());
+        assertEquals(31234, RaposzaSettings.ofProperties(settings.toProperties(),
+                RaposzaSettings.ofDefaults()).nPortRawar());
+        assertEquals(31234, withUiFirst(settings, 31200).nPortRawar());
+    }
+
+
     /** A write of any OTHER setting keeps a moved web UI block where it was. */
     @Test
     void the_web_ui_first_port_survives_a_round_trip() {
@@ -339,7 +375,8 @@ class RaposzaSettingsTest {
                 settings.nPortDiscovery(), settings.strLine(), settings.strLauncher(),
                 settings.nPortFirst(), settings.nPortPostgres(), settings.nSecondsReady(),
                 settings.flagOfferAviation(), settings.flagOfferPharma(), settings.strUrlOidc(),
-                nPortUiFirst, settings.dirDaml(), settings.dirDpm(), settings.dirSplice());
+                nPortUiFirst, settings.dirDaml(), settings.dirDpm(), settings.dirSplice(),
+                settings.nPortRawar());
     }
 
 

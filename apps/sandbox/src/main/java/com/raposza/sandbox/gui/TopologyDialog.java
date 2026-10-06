@@ -5,10 +5,15 @@ package com.raposza.sandbox.gui;
 import com.raposza.sandbox.app.DiscoveryDoc;
 
 import java.awt.Component;
+import java.awt.SecondaryLoop;
+import java.awt.Toolkit;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 import javax.swing.JButton;
-import javax.swing.JDialog;
+import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import javax.swing.WindowConstants;
 
 /**
  * WHICH STACK THIS RUN IS, asked once, before any window exists.
@@ -20,6 +25,18 @@ import javax.swing.JOptionPane;
  * participant" and "the database" have no referent in it - and a window that
  * had to rebuild itself when a combo box moved would carry both sets of panes
  * and hide one. Asking first means each window is built for what it holds.
+ *
+ * <h2>A FRAME, not a dialog - operator instruction, 2026-10-04</h2>
+ *
+ * His report: "This dialog is not an app window. Does not show up in the
+ * panel below. It should." `JOptionPane.createDialog(null, ...)` owns the
+ * dialog by Swing's hidden shared owner frame, so the toolkit marks it
+ * transient for that frame and the window manager keeps it off the panel. It
+ * is the first and only window of the run when it opens, so it is shown as
+ * an application window of its own: a `JFrame`, with the application's icon,
+ * and the event thread held in a {@link SecondaryLoop} until it is answered -
+ * which is what a modal dialog does underneath, so the caller still gets the
+ * answer as a return value.
  *
  * <h2>The values are the discovery document's, not new ones</h2>
  *
@@ -35,6 +52,8 @@ import javax.swing.JOptionPane;
  * Author Claude/bentzn
  */
 final class TopologyDialog {
+
+    private static final String STR_TITLE = "Raposza Sandbox";
 
     private static final String STR_SINGLE = "Single participant";
 
@@ -52,16 +71,47 @@ final class TopologyDialog {
 
 
     /**
-     * @param owner the parent component, or null
+     * MUST BE CALLED ON THE EVENT THREAD, as before: the secondary loop keeps
+     * dispatching events while it holds the caller.
+     *
+     * @param owner the component to centre on, or null for the screen
      * @return one of the DiscoveryDoc STR_TOPOLOGY constants, or null when the
-     *         dialog was closed - which is a refusal to start anything
+     *         window was closed - which is a refusal to start anything
      */
     static String strChoose(Component owner) {
+        JFrame frm = frmBuild(owner);
+        PaneUnselected pane = (PaneUnselected) frm.getContentPane().getComponent(0);
+        SecondaryLoop loop = Toolkit.getDefaultToolkit().getSystemEventQueue().createSecondaryLoop();
+        // SETTING THE VALUE IS THE ANSWER, and the loop ends on it. Closing the
+        // window ends it with the value still unset.
+        pane.addPropertyChangeListener(JOptionPane.VALUE_PROPERTY, evt -> loop.exit());
+        frm.addWindowListener(new WindowAdapter() {
+
+            @Override
+            public void windowClosing(WindowEvent evt) {
+                loop.exit();
+            }
+        });
+        frm.setVisible(true);
+        loop.enter();
+        frm.dispose();
+        return strTopologyOf(pane.getValue());
+    }
+
+
+    /**
+     * The window, built and packed, not shown. Separate so a test can read
+     * what kind of window it is without anybody answering it.
+     *
+     * @param owner the component to centre on, or null for the screen
+     * @return the frame; its content pane holds the option pane alone
+     */
+    static JFrame frmBuild(Component owner) {
         // COMPONENTS, NOT STRINGS. JOptionPane renders a String option as a
         // button of its own making, which cannot be coloured without reaching
-        // into the dialog's component tree afterwards and guessing which
-        // buttons are the options. A Component option is rendered as given -
-        // and wired to NOTHING, so each one sets the pane's value itself.
+        // into the component tree afterwards and guessing which buttons are
+        // the options. A Component option is rendered as given - and wired to
+        // NOTHING, so each one sets the pane's value itself.
         JButton btnSingle = btnOption(STR_SINGLE);
         JButton btnLocalNet = btnOption(STR_LOCALNET);
         Object[] arrOption = { btnSingle, btnLocalNet };
@@ -74,25 +124,49 @@ final class TopologyDialog {
         // takes away the ring that survives it.
         //
         // THE BUTTONS STAY FOCUSABLE. Making them unfocusable would also
-        // unselect them and would take the keyboard away from the dialog
+        // unselect them and would take the keyboard away from the window
         // altogether, which is a worse answer than the one being fixed.
-        PaneUnselected pane = new PaneUnselected(STR_ASK + "\n\n" + STR_DETAIL,
-                arrOption);
-        // SETTING THE VALUE IS WHAT CLOSES THE DIALOG - `createDialog`
-        // installs a listener on it. A Component option gets no such wiring
-        // of its own, so without these two the buttons would draw and do
-        // nothing.
+        PaneUnselected pane = new PaneUnselected(STR_ASK + "\n\n" + STR_DETAIL, arrOption);
         btnSingle.addActionListener(evt -> pane.setValue(STR_SINGLE));
         btnLocalNet.addActionListener(evt -> pane.setValue(STR_LOCALNET));
-        JDialog dlg = pane.createDialog(owner, "Raposza Sandbox");
-        dlg.getRootPane().setDefaultButton(null);
-        dlg.setVisible(true);
-        dlg.dispose();
 
-        // BY VALUE, not by index. `getValue()` answers with the option
-        // object, and with UNINITIALIZED_VALUE or null when the dialog was
-        // closed - which is a refusal to start anything.
-        Object objChosen = pane.getValue();
+        JFrame frm = new JFrame(STR_TITLE);
+        AppIcon.apply(frm);
+        // THE CLOSE IS A REFUSAL, reported by strChoose, never an exit from here.
+        frm.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        frm.getContentPane().add(pane);
+        frm.getRootPane().setDefaultButton(null);
+        frm.setResizable(false);
+        // WHAT createDialog DID AND A FRAME DOES NOT: the pane's own focus
+        // rule, applied once the window has the focus.
+        frm.addWindowFocusListener(new WindowAdapter() {
+
+            private boolean flagDone;
+
+
+            @Override
+            public void windowGainedFocus(WindowEvent evt) {
+                if (flagDone)
+                    return;
+                flagDone = true;
+                pane.selectInitialValue();
+            }
+        });
+        frm.pack();
+        frm.setLocationRelativeTo(owner);
+        return frm;
+    }
+
+
+    /**
+     * BY VALUE, not by index. `getValue()` answers with the option set by a
+     * button, and with UNINITIALIZED_VALUE or null when nothing was chosen -
+     * which is a refusal to start anything.
+     *
+     * @param objChosen the pane's value
+     * @return the DiscoveryDoc constant, or null
+     */
+    static String strTopologyOf(Object objChosen) {
         if (STR_SINGLE.equals(objChosen))
             return DiscoveryDoc.STR_TOPOLOGY_SANDBOX;
         if (STR_LOCALNET.equals(objChosen))
@@ -109,7 +183,7 @@ final class TopologyDialog {
      * pale blue.
      *
      * THE SAME COLOUR ON BOTH is the point. These are two equal choices and
-     * the dialog deliberately preselects neither; colouring one of them
+     * the window deliberately preselects neither; colouring one of them
      * differently would answer the question the focus rules just stopped
      * answering.
      *
@@ -126,7 +200,7 @@ final class TopologyDialog {
     }
 
 
-    /** A pane that leaves the focus where it found it - see strChoose. */
+    /** A pane that leaves the focus where it found it - see frmBuild. */
     private static final class PaneUnselected extends JOptionPane {
 
         private static final long serialVersionUID = 1L;

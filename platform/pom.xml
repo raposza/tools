@@ -11,7 +11,7 @@
 
     <groupId>com.raposza</groupId>
     <artifactId>raposza-platform</artifactId>
-    <version>0.4.1</version>
+    <version>0.5.0</version>
     <packaging>pom</packaging>
     <name>raposza-platform</name>
     <description>Explore and act on a Canton participant node</description>
@@ -26,16 +26,35 @@
 
     <properties>
         <java.version>21</java.version>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <!-- RELEASE, NOT SOURCE AND TARGET - his decision, 2026-10-04: built
+             with JDK 25, runnable on Java 21, which is the bottom. `release`
+             also refuses an API that Java 21 does not have, which `source`
+             and `target` on a newer JDK let through. -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <jackson.version>2.17.2</jackson.version>
+        <!-- 2.21.7 since 2026-10-05, from 2.17.2: CVE-2026-91777,
+             GHSA-cxp5-3px4-pw24 - quadratic CPU in deserialization, fixed
+             in 2.18.11 and 2.21.7. jackson-annotations carries no patch
+             number since 2.20, so it has its own property: 2.21. -->
+        <jackson.version>2.21.7</jackson.version>
+        <jackson.annotations.version>2.21</jackson.annotations.version>
+        <!-- NOT DECLARED by any module here; both arrive transitively
+             through the Daml artefacts and are managed so that the version
+             is ours. Bouncy Castle 1.85 since 2026-10-05, from 1.83:
+             CVE-2026-8763, GHSA-9pwp-9qqc-pr26 - name constraints bypassed
+             by a trailing dot, fixed in 1.85. Guava 33.3.0-jre, the newest
+             already in this reactor, over 31.1-jre: CVE-2023-2976, fixed in
+             32.0.0. -->
+        <bouncycastle.version>1.85</bouncycastle.version>
+        <guava.version>33.3.0-jre</guava.version>
         <!-- JWKS parsing and JWT signing. Nimbus rather than a hand-rolled JWK
              reader: decoding RSA CRT parameters and dispatching on key type is
              commodity, security-critical work with a long encoding tail.
-             Version NOT verified as latest; bump deliberately. -->
-        <nimbus.jose.version>9.40</nimbus.jose.version>
+             10.10 since 2026-10-05, from 9.40: CVE-2025-53864,
+             GHSA-xwmg-2g98-w7v9, fixed in 10.0.2. 10.10 was the newest on
+             Maven Central that day. -->
+        <nimbus.jose.version>10.10</nimbus.jose.version>
 
         <!-- Raposza OIDC, built from the sibling tree `raposza_oidc/` and
              resolved from the repository like any other dependency - D-774.
@@ -43,7 +62,7 @@
              and nothing keeps their numbers in step. NIMBUS MUST MATCH the
              version oidc-core compiles against, above; bump both or
              neither. -->
-        <raposza.oidc.version>0.4.0</raposza.oidc.version>
+        <raposza.oidc.version>0.5.1</raposza.oidc.version>
 
         <!-- Raposza Design, its own workspace and its own release - D-848. -->
         <raposza.design.version>0.4.0</raposza.design.version>
@@ -73,12 +92,16 @@
         <daml.lf.reader.version>3.4.11</daml.lf.reader.version>
         <canton.jar.v2.version>3.4.10</canton.jar.v2.version>
 
-        <!-- Pinned to what bindings-java 2.9.6 resolves transitively, so the
-             descriptor API raposza-wire uses is the same one the generated
-             v1 classes were built against. canton-jar 3.4.10 may carry a
-             different protobuf-java; check before P5 rather than assuming this
-             property covers both. -->
-        <protobuf.version>3.24.0</protobuf.version>
+        <!-- 3.25.8 since 2026-10-05: CVE-2024-7254, GHSA-735f-pc8j-v9w8 - a
+             crafted message of nested unknown groups overflows the stack,
+             fixed in 3.25.5. Raised WITHIN THE 3.x RUNTIME LINE the v1 classes
+             of bindings-java 2.9.6 were generated for - 3.24.0 until then,
+             what that artifact resolves transitively - and not to 4.x, a
+             different major line. 3.25.8 is the newest 3.x. Not compiled
+             against when raised: the gate is what establishes it. canton-jar
+             3.4.10 may carry a different protobuf-java; check before P5
+             rather than assuming this property covers both. -->
+        <protobuf.version>3.25.8</protobuf.version>
 
         <!-- gRPC server reflection stubs, for asking a participant to
              describe its own API. Pinned to the version bindings-java
@@ -97,16 +120,37 @@
              processes and must not require a container runtime; this
              unpacks a real server binary and runs it directly.
              Versions NOT verified as latest; bump deliberately. They
-             are the pair the external prototype ran on. -->
+             are the pair the external prototype ran on. The driver is
+             42.7.13 since 2026-10-05, from 42.7.4: CVE-2025-49146,
+             channel binding not enforced when required, fixed in 42.7.7. -->
         <zonky.postgres.version>2.2.2</zonky.postgres.version>
-        <postgresql.driver.version>42.7.4</postgresql.driver.version>
+        <postgresql.driver.version>42.7.13</postgresql.driver.version>
 
         <maven.enforcer.version>3.6.3</maven.enforcer.version>
-        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <!-- 3.16.0 since 2026-10-05, from 3.13.0, which brought commons-io
+             2.11.0 (CVE-2024-47554); 3.16.0 brings 2.22.0. -->
+        <maven.compiler.plugin.version>3.16.0</maven.compiler.plugin.version>
         <maven.shade.version>3.6.0</maven.shade.version>
         <maven.jar.version>3.4.2</maven.jar.version>
         <maven.surefire.version>3.5.2</maven.surefire.version>
         <maven.failsafe.version>3.5.2</maven.failsafe.version>
+        <!-- The lifecycle plugins at the versions spring-boot-dependencies
+             3.5.16 manages, so the Spring Boot builds and this one run one
+             set, on the workstation and in CI alike. Stated, not taken from
+             whichever Maven runs the build. -->
+        <maven.clean.version>3.4.1</maven.clean.version>
+        <maven.resources.version>3.3.1</maven.resources.version>
+        <maven.install.version>3.1.4</maven.install.version>
+        <maven.deploy.version>3.1.4</maven.deploy.version>
+        <!-- 3.11.0 since 2026-10-05, from the 3.8.1 spring-boot-
+             dependencies 3.5.16 manages, so newer than the set above;
+             dep_report.py calls the same version. -->
+        <maven.dependency.version>3.11.0</maven.dependency.version>
+        <!-- Run by no gate here. 3.22.0 since 2026-10-05, from 3.3, the
+             version Maven 3.8.7 binds: 3.3 put commons-collections 3.2.1,
+             commons-beanutils 1.7.0 and Velocity 1.5 into the resolved plugin
+             set - dependency report 20261005_0940Z. -->
+        <maven.site.version>3.22.0</maven.site.version>
     </properties>
 
     <modules>
@@ -115,6 +159,7 @@
         <module>raposza-model</module>
         <module>raposza-spi</module>
         <module>raposza-cache</module>
+        <module>raposza-rawar</module>
         <module>raposza-lf</module>
         <module>raposza-wire</module>
         <module>raposza-admin</module>
@@ -138,8 +183,9 @@
                 <artifactId>jackson-databind</artifactId>
                 <version>${jackson.version}</version>
             </dependency>
-            <!-- jackson-core and jackson-annotations are pinned to the SAME
-                 version as databind, and that is not tidiness.
+            <!-- jackson-core is pinned to the SAME version as databind, and
+                 jackson-annotations to the same line - 2.21, which since 2.20
+                 carries no patch number - and that is not tidiness.
 
                  Managing databind alone leaves core and annotations to nearest
                  wins, and the Daml artefacts bring an older core transitively.
@@ -162,12 +208,22 @@
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
                 <artifactId>jackson-annotations</artifactId>
-                <version>${jackson.version}</version>
+                <version>${jackson.annotations.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.fasterxml.jackson.datatype</groupId>
                 <artifactId>jackson-datatype-jdk8</artifactId>
                 <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${guava.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.nimbusds</groupId>
@@ -237,6 +293,15 @@
                 <version>${junit.version}</version>
                 <scope>test</scope>
             </dependency>
+            <!-- 2.13.16 since 2026-10-05, over the 2.13.6 the Daml LF
+                 reader brings: CVE-2022-36944, fixed in 2.13.9. 2.13.16 is
+                 the scala-compiler and scala-reflect it brings beside it,
+                 and 2.13 is binary compatible forward. -->
+            <dependency>
+                <groupId>org.scala-lang</groupId>
+                <artifactId>scala-library</artifactId>
+                <version>2.13.16</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -270,6 +335,32 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>${maven.jar.version}</version>
+                    <!-- Forced since 2026-10-05 over what this plugin brings:
+                         commons-lang3 3.20.0 (CVE-2025-48924, fixed in
+                         3.18.0). It runs in the gate, so a breakage shows
+                         there, and dep_report.py lists it as forced by the
+                         build. -->
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.apache.commons</groupId>
+                            <artifactId>commons-lang3</artifactId>
+                            <version>3.20.0</version>
+                        </dependency>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 4.0.3
+                             (CVE-2025-67030, fixed in 4.0.3); snappy 0.5
+                             (CVE-2024-36124, fixed in 0.5). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>4.0.3</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.iq80.snappy</groupId>
+                            <artifactId>snappy</artifactId>
+                            <version>0.5</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -284,6 +375,139 @@
                     <groupId>com.raposza.design</groupId>
                     <artifactId>raposza-design-maven-plugin</artifactId>
                     <version>${raposza.design.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${maven.clean.version}</version>
+                    <dependencies>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 4.0.3
+                             (CVE-2025-67030, fixed in 4.0.3). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>4.0.3</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven.resources.version}</version>
+                    <!-- Forced since 2026-10-05 over what this plugin brings:
+                         commons-io 2.22.0 (CVE-2024-47554, fixed in 2.14.0);
+                         commons-lang3 3.20.0 (CVE-2025-48924, fixed in
+                         3.18.0). It runs in the gate, so a breakage shows
+                         there, and dep_report.py lists it as forced by the
+                         build. -->
+                    <dependencies>
+                        <dependency>
+                            <groupId>commons-io</groupId>
+                            <artifactId>commons-io</artifactId>
+                            <version>2.22.0</version>
+                        </dependency>
+                        <dependency>
+                            <groupId>org.apache.commons</groupId>
+                            <artifactId>commons-lang3</artifactId>
+                            <version>3.20.0</version>
+                        </dependency>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 3.6.1
+                             (CVE-2025-67030, fixed in 3.6.1). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>3.6.1</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${maven.install.version}</version>
+                    <dependencies>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 4.0.3
+                             (CVE-2025-67030, fixed in 4.0.3). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>4.0.3</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${maven.deploy.version}</version>
+                    <dependencies>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 4.0.3
+                             (CVE-2025-67030, fixed in 4.0.3). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>4.0.3</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>${maven.dependency.version}</version>
+                    <!-- BeanUtils 1.11.0 since 2026-10-05, over the 1.9.4 this plugin
+                         brings: CVE-2025-48734, the declaredClass property reaching an
+                         enum's classloader, fixed in 1.11.0 - dependency report
+                         20261005_1031Z and its review. The plugin runs in the gate, so a
+                         breakage shows there. -->
+                    <dependencies>
+                        <dependency>
+                            <groupId>commons-beanutils</groupId>
+                            <artifactId>commons-beanutils</artifactId>
+                            <version>1.11.0</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven.shade.version}</version>
+                    <!-- Forced since 2026-10-05 over what this plugin brings:
+                         commons-lang3 3.20.0 (CVE-2025-48924, fixed in
+                         3.18.0). It runs in the gate, so a breakage shows
+                         there, and dep_report.py lists it as forced by the
+                         build. -->
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.apache.commons</groupId>
+                            <artifactId>commons-lang3</artifactId>
+                            <version>3.20.0</version>
+                        </dependency>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: plexus-utils 3.6.1
+                             (CVE-2025-67030, fixed in 3.6.1). -->
+                        <dependency>
+                            <groupId>org.codehaus.plexus</groupId>
+                            <artifactId>plexus-utils</artifactId>
+                            <version>3.6.1</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${maven.site.version}</version>
+                    <dependencies>
+                        <!-- Forced since 2026-10-05, dependency report
+                             20261005_1130Z: jsoup 1.23.1 (CVE-2026-71497,
+                             fixed in 1.23.1). -->
+                        <dependency>
+                            <groupId>org.jsoup</groupId>
+                            <artifactId>jsoup</artifactId>
+                            <version>1.23.1</version>
+                        </dependency>
+                    </dependencies>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -320,6 +544,28 @@
                                     </excludes>
                                     <message>S-1: this module must not declare a Canton, Daml-LF, protobuf or gRPC dependency. Those belong in a translation module (raposza-lf, raposza-wire, raposza-target-2x, raposza-target-3x). If the type is needed above that line, something is missing from the neutral layer: a domain type belongs in raposza-model, a contract a target implements belongs in raposza-spi.</message>
                                 </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
+                    <!-- SUPPLY CHAIN. No repository in this pom or its parents,
+                         every plugin the clean and default lifecycles run carries a
+                         stated version, and no dependency version moves on its own.
+                         Tightened, never weakened to make a build pass. A module
+                         that skips S-1 skips it by execution id, never the plugin. -->
+                    <execution>
+                        <id>supply-chain</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireNoRepositories/>
+                                <requirePluginVersions/>
+                                <banDynamicVersions>
+                                    <allowSnapshots>false</allowSnapshots>
+                                </banDynamicVersions>
                             </rules>
                             <fail>true</fail>
                         </configuration>

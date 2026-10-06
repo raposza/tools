@@ -7,6 +7,7 @@ import com.raposza.sandbox.app.SandboxApp;
 import com.raposza.sandbox.app.SandboxOptions;
 
 import java.awt.GraphicsEnvironment;
+import java.net.http.HttpClient;
 
 import javax.swing.SwingUtilities;
 
@@ -69,6 +70,18 @@ public final class SandboxGui {
             return;
         }
 
+        // THE HTTP CLIENT, WARMED WHILE THE LOOK AND FEEL INSTALLS AND THE
+        // OPERATOR READS THE TOPOLOGY QUESTION. Measured 2026-10-03: opening the
+        // window held the event thread 1093 ms, sampled in HttpClientImpl.<init>
+        // under SSLContext.getDefault. The first client built in the JVM loads
+        // the trust store and the client classes, and the window's panes build
+        // theirs as fields, on the event thread. Here it costs nobody a frame.
+        Thread threadWarm = new Thread(SandboxGui::warmHttp, "sandbox-http-warm");
+        threadWarm.setDaemon(true);
+        threadWarm.start();
+        // AND WHAT THE WINDOW READS AT OPEN, for the same reason - A-63 (b).
+        OpenPrefetch.start();
+
         SandboxOptions optionsForm = options;
         SwingUtilities.invokeLater(() -> {
             try {
@@ -91,6 +104,21 @@ public final class SandboxGui {
                 Modals.error(null, String.valueOf(ex.getMessage()));
             }
         });
+    }
+
+
+    /**
+     * Builds and closes one client, so the next is built from warm state. A
+     * failure is not reported here: the pane that needs a client reports the
+     * same failure where it is used.
+     */
+    private static void warmHttp() {
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            client.version();
+        }
+        catch (RuntimeException ex) {
+            // reported where a client is used
+        }
     }
 
 }

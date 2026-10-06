@@ -44,7 +44,10 @@ import java.util.List;
  * operators. Equality only: party, contract id, Bool, enum constructor; an
  * ordering on one of these stops the statement and says so. Optionals are
  * transparent: {@code note = "x"} tests the Some, {@code note = null} asks for
- * None, and null may only be compared with {@code =}.
+ * None, and null may only be compared with {@code =}. A None test asks
+ * NOTHING of the element type, so {@code lock = null} holds on an Optional of
+ * a record, which no other comparison reaches - 2026-10-04, the Registry
+ * Utility's {@code Holding}.
  *
  * Author Claude/bentzn
  */
@@ -107,6 +110,22 @@ final class Sieve {
         boolean flagOptional = type instanceof DamlType.OptionalOf;
         DamlType typeElem = flagOptional ? ((DamlType.OptionalOf) type).typeElem() : type;
 
+        // '= null' IS A NONE TEST, decided BEFORE the element type is asked
+        // whether it can be compared: nothing of the element is compared, so
+        // an Optional of a record answers it as well as an Optional of text.
+        if (cmp.nodeValue().isNull()) {
+            if (cmp.op().flagOrdering()) {
+                throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath + " "
+                        + cmp.op().strSymbol() + " null' has no answer; null may only be"
+                        + " compared with =");
+            }
+            if (!flagOptional) {
+                throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath
+                        + "' is not an Optional, so it is never null");
+            }
+            return new Test(cmp, null, Kind.NONE);
+        }
+
         Kind kind = kindOf(typeElem, registry);
         if (kind == Kind.NONE) {
             throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath + "' is "
@@ -118,19 +137,6 @@ final class Sieve {
             throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath + "' is "
                     + describe(typeElem, registry) + ", which has no ordering; only = applies"
                     + " to it");
-        }
-
-        if (cmp.nodeValue().isNull()) {
-            if (cmp.op().flagOrdering()) {
-                throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath + " "
-                        + cmp.op().strSymbol() + " null' has no answer; null may only be"
-                        + " compared with =");
-            }
-            if (!flagOptional) {
-                throw new CaqlException(stmt.numLine(), stmt.strSource(), "'" + strPath
-                        + "' is not an Optional, so it is never null");
-            }
-            return new Test(cmp, null, kind);
         }
 
         DamlValue value;

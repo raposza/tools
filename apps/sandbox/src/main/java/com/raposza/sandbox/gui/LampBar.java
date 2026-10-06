@@ -57,6 +57,15 @@ public final class LampBar extends JPanel {
     private final Lamp lampPqs = new Lamp("PQS");
 
     /**
+     * THE OPENID PROVIDER, right of PQS - his instruction, 2026-10-04. NOT A
+     * COMPONENT OF ANY STACK: it runs whether a stack does or not, so the
+     * window sets it and {@link #setStack} and {@link #setService} leave it
+     * alone. Green when the built-in provider runs, or when an external one
+     * has answered its discovery document.
+     */
+    private final Lamp lampOidc = new Lamp("OIDC");
+
+    /**
      * WHAT THE WINDOW SAYS PQS IS DOING, or null to ask the stack.
      *
      * On the LocalNetND topology the stack does not own scribe and cannot -
@@ -98,6 +107,7 @@ public final class LampBar extends JPanel {
         add(lampParticipant);
         add(lampJsonApi);
         add(lampPqs);
+        add(lampOidc);
         add(lampFixture);
         lampFixture.setVisible(false);
         setService(null);
@@ -165,6 +175,41 @@ public final class LampBar extends JPanel {
         if (health == null)
             throw new IllegalArgumentException("a health is required");
         lampFixture.setHealth(health);
+    }
+
+
+    /**
+     * GREEN ONLY ONCE IT HOLDS EVERYBODY - his instruction, 2026-10-04: "It
+     * should only turn green when OIDC has all information necessary."
+     *
+     * A running process is not that. Spring Boot answers seconds after its
+     * process starts, and a stack writes its users after that. Until the
+     * Users tab has read the server's list with no start between it and its
+     * users, the lamp is amber. An external server is somebody else's: the
+     * window writes nobody there, so found is all it can be.
+     *
+     * @param flagProviderUp built in: the process runs; external: discovered
+     * @param flagExternal whether the server is somebody else's
+     * @param flagUsersComplete whether the Users tab read every user
+     * @return what the OIDC lamp shows
+     */
+    static SandboxService.Health healthOidc(boolean flagProviderUp, boolean flagExternal,
+            boolean flagUsersComplete) {
+        if (!flagProviderUp)
+            return flagExternal ? SandboxService.Health.DOWN : SandboxService.Health.OFF;
+        if (flagExternal || flagUsersComplete)
+            return SandboxService.Health.UP;
+        return SandboxService.Health.STARTING;
+    }
+
+
+    /**
+     * @param health what the OpenID Provider is doing; never null
+     */
+    public void setOidcHealth(SandboxService.Health health) {
+        if (health == null)
+            throw new IllegalArgumentException("a health is required");
+        lampOidc.setHealth(health);
     }
 
 

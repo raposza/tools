@@ -38,12 +38,12 @@ class MintRegistrationTest {
 
         assertEquals(6, lstRedirect.size(), String.valueOf(lstRedirect));
         for (String strUri : lstRedirect) {
-            assertTrue(strUri.matches("http://[a-z]+\\.localhost:310[0-2]0"), strUri);
+            assertTrue(strUri.matches("http://[a-z.-]+\\.localhost:310[0-2]0"), strUri);
         }
-        assertTrue(lstRedirect.contains("http://wallet.localhost:31000"));
+        assertTrue(lstRedirect.contains("http://sv.wallet.localhost:31000"));
         assertTrue(lstRedirect.contains("http://sv.localhost:31000"));
-        assertTrue(lstRedirect.contains("http://ans.localhost:31010"));
-        assertTrue(lstRedirect.contains("http://wallet.localhost:31020"));
+        assertTrue(lstRedirect.contains("http://app-provider.ans.localhost:31010"));
+        assertTrue(lstRedirect.contains("http://app-user.wallet.localhost:31020"));
         // SCAN HAS NO LOGIN BOX and nobody is sent back to it.
         assertTrue(lstRedirect.stream().noneMatch(strUri -> strUri.contains("scan.")));
     }

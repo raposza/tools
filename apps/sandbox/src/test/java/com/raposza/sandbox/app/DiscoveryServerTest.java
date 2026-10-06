@@ -11,7 +11,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.raposza.jwt.TokenShape;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.Socket;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -114,6 +117,32 @@ class DiscoveryServerTest {
         // The proof is that the port can be taken again.
         serverOther.start(nPortWas, DiscoveryServerTest::docStopped);
         assertEquals(nPortWas, serverOther.nPort());
+    }
+
+
+    /**
+     * A STOP DOES NOT WAIT FOR AN UNFINISHED EXCHANGE. It runs on the event
+     * thread when the window closes, and a one-second grace held the close
+     * 2067 ms across two servers - measured 2026-10-03.
+     *
+     * THE CONTROL CAN FAIL: with a grace of one second, a socket holding half
+     * a request keeps {@code HttpServer.stop} for the whole second on JDK 21
+     * - measured, 1000 ms.
+     */
+    @Test
+    void a_stop_does_not_wait_for_a_half_read_request() throws Exception {
+        server.start(0, DiscoveryServerTest::docStopped);
+        try (Socket socket = new Socket("127.0.0.1", server.nPort())) {
+            OutputStream out = socket.getOutputStream();
+            out.write("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n".getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            Thread.sleep(200L);
+
+            long nStart = System.nanoTime();
+            server.stop();
+            long nMs = (System.nanoTime() - nStart) / 1_000_000L;
+            assertTrue(nMs < 500L, "the stop took " + nMs + " ms");
+        }
     }
 
 

@@ -11,6 +11,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -51,6 +52,8 @@ public final class LedgerProbe {
     private static final int CNT_CONTRACT_MAX = 2000;
 
     private static final int CNT_ENTITY_MAX = 2000;
+
+    private static final int CNT_EXERCISE_MAX = 500;
 
     /** What a party is called, in order of preference. */
     private static final String[] ARR_COLUMN_PARTY =
@@ -193,22 +196,158 @@ public final class LedgerProbe {
                         + setColCreate + ")";
             }
 
+            // WHERE THE TEMPLATE IS. 2.x carries it on the create table; 3.x
+            // does not, and where it keeps it has not been measured - D-415.
+            // So it is FOUND: a column of the create table named for a
+            // template, else a table that carries the same contract column and
+            // one named for a template, which every row is looked up in.
+            String[] arrTemplate = strColId == null ? null
+                    : templateSource(conn, strSchema, strTableCreate, setColCreate, strColId);
+            ledger.strTemplateSource = arrTemplate == null
+                    ? "not found; the create table has " + setColCreate
+                    : arrTemplate[0] + "." + arrTemplate[1] + "." + arrTemplate[2];
+
             if (arrArchive != null) {
-                readContracts(conn, arrArchive[0], arrArchive[1], strColId, mapTemplate,
-                        ledger.lstArchived);
+                readContracts(conn, arrArchive[0], arrArchive[1], strColId, arrTemplate,
+                        mapTemplate, ledger.lstArchived);
                 for (Contract contract : ledger.lstArchived) {
                     setArchived.add(contract.strId());
                 }
             }
 
             List<Contract> lstCreated = new ArrayList<>();
-            readContracts(conn, strSchema, strTableCreate, strColId, mapTemplate, lstCreated);
+            readContracts(conn, strSchema, strTableCreate, strColId, arrTemplate, mapTemplate,
+                    lstCreated);
             for (Contract contract : lstCreated) {
                 if (!setArchived.contains(contract.strId()))
                     ledger.lstActive.add(contract);
             }
+
+            // THE CHOICES THAT ARCHIVE NOTHING - his instruction, 2026-10-04,
+            // that choices are logged. Every other table of the schema with a
+            // column named for a choice is read; on 2.x that is
+            // `participant_events_non_consuming_exercise`, on 3.x it has not
+            // been measured, so it is found the same way the template was.
+            Map<String, String> mapIntern = arrIntern == null ? new LinkedHashMap<>()
+                    : internedAll(conn, arrIntern[0], arrIntern[1]);
+            readExercises(conn, strSchema, strTableCreate,
+                    arrArchive == null ? null : arrArchive[1], strColId, arrTemplate,
+                    mapTemplate, mapIntern, ledger.lstExercise, ledger.lstSourceExercise);
+            // AND THE CONSUMING ONES BY NAME, where the archive table says
+            // which choice archived the contract.
+            if (!mapIntern.isEmpty()) {
+                for (int idx = 0; idx < ledger.lstArchived.size(); idx++) {
+                    Contract contract = ledger.lstArchived.get(idx);
+                    String strHit = mapIntern.get(contract.strChoice());
+                    if (strHit != null)
+                        ledger.lstArchived.set(idx, contract.withChoice(strHit));
+                }
+            }
         }
         return ledger;
+    }
+
+
+    /**
+     * Every row of every table in the schema, other than the two event tables
+     * already read, that carries a column named for a choice and one that
+     * orders it.
+     *
+     * @param conn an open connection
+     * @param strSchema the schema the creates came out of
+     * @param strTableCreate the create table, which is not read again
+     * @param strTableArchive the archive table, likewise, or null
+     * @param strColId the contract column, for the template lookup
+     * @param arrTemplate where the template is, or null
+     * @param mapTemplate interned id to template
+     * @param mapIntern interned id to any interned string, for a choice
+     *        stored as an id
+     * @param lstOut where the exercises land, newest first per table
+     * @param lstSource where `schema.table.column` is noted for each table read
+     */
+    private static void readExercises(Connection conn, String strSchema,
+            String strTableCreate, String strTableArchive, String strColId,
+            String[] arrTemplate, Map<String, String> mapTemplate,
+            Map<String, String> mapIntern, List<Exercise> lstOut, List<String> lstSource)
+            throws SQLException {
+        List<String> lstTable = new ArrayList<>();
+        String strQuery = "SELECT DISTINCT table_name FROM information_schema.columns"
+                + " WHERE table_schema = '" + strSchema + "' AND column_name LIKE '%choice%'"
+                + " ORDER BY 1";
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(strQuery)) {
+            while (rs.next()) {
+                lstTable.add(rs.getString(1));
+            }
+        }
+        for (String strTable : lstTable) {
+            if (strTable.equals(strTableCreate) || strTable.equals(strTableArchive))
+                continue;
+            Set<String> setColumn = columnsOf(conn, strSchema, strTable);
+            String strColChoice = firstOf(setColumn, "exercise_choice");
+            if (strColChoice == null)
+                strColChoice = firstContaining(setColumn, "choice");
+            String strColOrder = firstOf(setColumn, "event_sequential_id", "event_offset");
+            if (strColChoice == null || strColOrder == null)
+                continue;
+            String strColTemplate = firstOf(setColumn, "template_id");
+            if (strColTemplate == null)
+                strColTemplate = firstContaining(setColumn, "template");
+            String strColContract = strColId != null && setColumn.contains(strColId) ? strColId
+                    : firstOf(setColumn, ARR_COLUMN_CONTRACT);
+
+            String strExprTemplate = "NULL";
+            if (strColTemplate != null)
+                strExprTemplate = "a." + strColTemplate;
+            else if (arrTemplate != null && strColContract != null
+                    && strColContract.equals(strColId))
+                strExprTemplate = "(SELECT t." + arrTemplate[2] + " FROM " + arrTemplate[0]
+                        + "." + arrTemplate[1] + " t WHERE t." + strColId + " = a." + strColId
+                        + " LIMIT 1)";
+
+            String strRead = "SELECT a." + strColOrder + " AS c_off, " + strExprTemplate
+                    + " AS c_tpl, a." + strColChoice + " AS c_choice, "
+                    + (strColContract == null ? "NULL" : "a." + strColContract) + " AS c_id"
+                    + " FROM " + strSchema + "." + strTable + " a"
+                    + " WHERE a." + strColChoice + " IS NOT NULL"
+                    + " ORDER BY a." + strColOrder + " DESC LIMIT " + CNT_EXERCISE_MAX;
+            try (Statement stmt = conn.createStatement();
+                    ResultSet rs = stmt.executeQuery(strRead)) {
+                while (rs.next()) {
+                    String strChoice = text(rs.getObject("c_choice"));
+                    String strHit = mapIntern.get(strChoice);
+                    lstOut.add(new Exercise(strTable + "#" + text(rs.getObject("c_off")),
+                            resolved(text(rs.getObject("c_tpl")), mapTemplate),
+                            strHit == null ? strChoice : strHit, text(rs.getObject("c_off")),
+                            text(rs.getObject("c_id"))));
+                }
+            }
+            catch (SQLException ex) {
+                // A TABLE THAT CANNOT BE READ THIS WAY is noted and skipped:
+                // the other tables, and the contracts, are still worth having.
+                lstSource.add(strSchema + "." + strTable + " not read: " + ex.getMessage());
+                continue;
+            }
+            lstSource.add(strSchema + "." + strTable + "." + strColChoice);
+        }
+    }
+
+
+    /**
+     * Every interned string, by its id, with its one-character tag taken off
+     * - `t|`, `p|` and the rest - so a choice stored as an id reads as its
+     * name whatever tag it was interned under.
+     */
+    private static Map<String, String> internedAll(Connection conn, String strSchema,
+            String strTable) throws SQLException {
+        Map<String, String> mapOut = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : internedById(conn, strSchema, strTable, "")
+                .entrySet()) {
+            String strValue = entry.getValue();
+            mapOut.put(entry.getKey(), strValue.length() > 2 && strValue.charAt(1) == '|'
+                    ? strValue.substring(2) : strValue);
+        }
+        return mapOut;
     }
 
 
@@ -509,17 +648,78 @@ public final class LedgerProbe {
 
 
     /**
+     * Where the template of a contract is kept.
+     *
+     * FIRST the create table itself: `template_id`, which is 2.x's, or any
+     * column whose name carries `template`. THEN a table elsewhere that
+     * carries the same contract column AND a column named for a template -
+     * one in the creates' own schema before any other, and one whose name is
+     * not an event table before one that is, because an event table covers
+     * only the contracts that had that event.
+     *
+     * @param conn an open connection
+     * @param strSchema the schema the creates came out of
+     * @param strTableCreate the create table
+     * @param setColCreate its columns
+     * @param strColId the contract column both event tables share
+     * @return `{schema, table, column}`, or null when nothing carries one
+     */
+    private static String[] templateSource(Connection conn, String strSchema,
+            String strTableCreate, Set<String> setColCreate, String strColId)
+            throws SQLException {
+        String strOwn = firstOf(setColCreate, "template_id");
+        if (strOwn == null)
+            strOwn = firstContaining(setColCreate, "template");
+        if (strOwn != null)
+            return new String[] { strSchema, strTableCreate, strOwn };
+
+        String strQuery = "SELECT c.table_schema, c.table_name, c.column_name"
+                + " FROM information_schema.columns c"
+                + " WHERE c.column_name LIKE '%template%'"
+                + " AND c.table_schema NOT IN ('information_schema', 'pg_catalog')"
+                + " AND EXISTS (SELECT 1 FROM information_schema.columns k"
+                + " WHERE k.table_schema = c.table_schema AND k.table_name = c.table_name"
+                + " AND k.column_name = '" + strColId + "')"
+                + " ORDER BY (c.table_schema = '" + strSchema + "') DESC,"
+                + " (c.table_name LIKE '%event%') ASC, c.table_name, c.column_name LIMIT 1";
+        try (Statement stmt = conn.createStatement();
+                ResultSet rs = stmt.executeQuery(strQuery)) {
+            if (rs.next())
+                return new String[] { rs.getString(1), rs.getString(2), rs.getString(3) };
+        }
+        return null;
+    }
+
+
+    /**
+     * @param setColumn the columns of a table
+     * @param strPart what the name must carry
+     * @return the first in name order that carries it, or null
+     */
+    private static String firstContaining(Set<String> setColumn, String strPart) {
+        String strBest = null;
+        for (String strColumn : setColumn) {
+            if (strColumn.contains(strPart) && (strBest == null || strColumn.compareTo(strBest) < 0))
+                strBest = strColumn;
+        }
+        return strBest;
+    }
+
+
+    /**
      * @param conn an open connection
      * @param strSchema the schema owning the table
      * @param strTable the create or the archive table
      * @param strColId what identifies a contract on BOTH tables, or null when
      *        they share nothing
+     * @param arrTemplate where the template is, from {@link #templateSource},
+     *        or null when nothing carries one
      * @param mapTemplate interned id to template name, for the id column
      * @param lstOut where the rows land, newest first
      */
     private static void readContracts(Connection conn, String strSchema, String strTable,
-            String strColId, Map<String, String> mapTemplate, List<Contract> lstOut)
-            throws SQLException {
+            String strColId, String[] arrTemplate, Map<String, String> mapTemplate,
+            List<Contract> lstOut) throws SQLException {
         if (strColId == null)
             return;
         Set<String> setColumn = columnsOf(conn, strSchema, strTable);
@@ -527,16 +727,34 @@ public final class LedgerProbe {
             return;
 
         String strColTemplate = firstOf(setColumn, "template_id");
+        if (strColTemplate == null)
+            strColTemplate = firstContaining(setColumn, "template");
         String strColOffset = firstOf(setColumn, "event_offset", "event_sequential_id");
         String strColTime = firstOf(setColumn, "ledger_effective_time", "record_time");
+        // THE CHOICE THAT ARCHIVED IT, where the table says - 2.x's consuming
+        // table names it `exercise_choice`; on 3.x it is found.
+        String strColChoice = firstOf(setColumn, "exercise_choice");
+        if (strColChoice == null)
+            strColChoice = firstContaining(setColumn, "choice");
+
+        // THIS TABLE'S OWN COLUMN, else ONE LOOKUP PER ROW in the table that
+        // carries it. A scalar subquery rather than a join: a table holding
+        // more than one row per contract would otherwise multiply the list.
+        String strExprTemplate = "NULL";
+        if (strColTemplate != null)
+            strExprTemplate = "a." + strColTemplate;
+        else if (arrTemplate != null)
+            strExprTemplate = "(SELECT t." + arrTemplate[2] + " FROM " + arrTemplate[0] + "."
+                    + arrTemplate[1] + " t WHERE t." + strColId + " = a." + strColId + " LIMIT 1)";
 
         StringBuilder sb = new StringBuilder("SELECT ");
-        sb.append(strColId).append(" AS c_id, ");
-        sb.append(strColTemplate == null ? "NULL" : strColTemplate).append(" AS c_tpl, ");
-        sb.append(strColOffset == null ? "NULL" : strColOffset).append(" AS c_off, ");
-        sb.append(strColTime == null ? "NULL" : strColTime).append(" AS c_time");
-        sb.append(" FROM ").append(strSchema).append('.').append(strTable);
-        sb.append(" ORDER BY ").append(strColOffset == null ? strColId : strColOffset);
+        sb.append("a.").append(strColId).append(" AS c_id, ");
+        sb.append(strExprTemplate).append(" AS c_tpl, ");
+        sb.append(strColOffset == null ? "NULL" : "a." + strColOffset).append(" AS c_off, ");
+        sb.append(strColTime == null ? "NULL" : "a." + strColTime).append(" AS c_time, ");
+        sb.append(strColChoice == null ? "NULL" : "a." + strColChoice).append(" AS c_choice");
+        sb.append(" FROM ").append(strSchema).append('.').append(strTable).append(" a");
+        sb.append(" ORDER BY a.").append(strColOffset == null ? strColId : strColOffset);
         sb.append(" DESC LIMIT ").append(CNT_CONTRACT_MAX);
 
         try (Statement stmt = conn.createStatement();
@@ -544,7 +762,8 @@ public final class LedgerProbe {
             while (rs.next()) {
                 lstOut.add(new Contract(text(rs.getObject("c_id")),
                         resolved(text(rs.getObject("c_tpl")), mapTemplate),
-                        text(rs.getObject("c_off")), text(rs.getObject("c_time"))));
+                        text(rs.getObject("c_off")), text(rs.getObject("c_time")),
+                        text(rs.getObject("c_choice"))));
             }
         }
     }
@@ -587,8 +806,32 @@ public final class LedgerProbe {
     }
 
 
+    /**
+     * A cell as text. A bytea comes back as `byte[]`, whose `toString` is an
+     * object address; it is decoded when it is printable text, and hex
+     * otherwise, so an id still compares equal to itself across two reads.
+     */
     private static String text(Object objValue) {
-        return objValue == null ? "" : String.valueOf(objValue);
+        if (objValue == null)
+            return "";
+        if (objValue instanceof byte[] arrByte) {
+            boolean flagText = arrByte.length > 0;
+            for (byte bValue : arrByte) {
+                if (bValue < 0x20 || bValue > 0x7e) {
+                    flagText = false;
+                    break;
+                }
+            }
+            if (flagText)
+                return new String(arrByte, StandardCharsets.US_ASCII);
+            StringBuilder bld = new StringBuilder(arrByte.length * 2);
+            for (byte bValue : arrByte) {
+                bld.append(Character.forDigit((bValue >> 4) & 0xf, 16))
+                        .append(Character.forDigit(bValue & 0xf, 16));
+            }
+            return bld.toString();
+        }
+        return String.valueOf(objValue);
     }
 
 
@@ -639,7 +882,22 @@ public final class LedgerProbe {
 
 
     /** One create or archive row, in the four fields a reader needs. */
-    public record Contract(String strId, String strTemplate, String strOffset, String strTime) {
+    /**
+     * @param strChoice the choice that archived it, on the archive side and
+     *        where the table says; empty otherwise
+     */
+    public record Contract(String strId, String strTemplate, String strOffset, String strTime,
+            String strChoice) {
+
+        public Contract(String strId, String strTemplate, String strOffset, String strTime) {
+            this(strId, strTemplate, strOffset, strTime, "");
+        }
+
+
+        Contract withChoice(String strChoiceNew) {
+            return new Contract(strId, strTemplate, strOffset, strTime, strChoiceNew);
+        }
+
 
         @Override
         public String toString() {
@@ -649,8 +907,26 @@ public final class LedgerProbe {
     }
 
 
+    /**
+     * A choice that archived nothing.
+     *
+     * @param strKey unique on this ledger - the table and its ordering column
+     * @param strTemplate the template, as interned
+     * @param strChoice the choice's name
+     * @param strOffset what orders it
+     * @param strContract the contract it was exercised on, or empty
+     */
+    public record Exercise(String strKey, String strTemplate, String strChoice, String strOffset,
+            String strContract) {
+    }
+
+
     /** Everything one read returned. */
     public static final class Ledger {
+
+        private final List<Exercise> lstExercise = new ArrayList<>();
+
+        private final List<String> lstSourceExercise = new ArrayList<>();
 
         private final List<String> lstParty = new ArrayList<>();
 
@@ -667,6 +943,8 @@ public final class LedgerProbe {
         private final List<String> lstSourceUser = new ArrayList<>();
 
         private String strSchemaNote = "";
+
+        private String strTemplateSource = "";
 
         private long cntCreateRow;
 
@@ -708,6 +986,33 @@ public final class LedgerProbe {
 
         public String strSchemaNote() {
             return strSchemaNote;
+        }
+
+
+        /**
+         * @return the choices that archived nothing, newest first per table
+         */
+        public List<Exercise> lstExercise() {
+            return lstExercise;
+        }
+
+
+        /**
+         * @return `schema.table.column` for each table the exercises came
+         *         from - empty when none was found
+         */
+        public List<String> lstSourceExercise() {
+            return lstSourceExercise;
+        }
+
+
+        /**
+         * @return `schema.table.column` the templates were read from, or
+         *         `not found` with the create table's columns - which is the
+         *         measurement D-415 left open
+         */
+        public String strTemplateSource() {
+            return strTemplateSource;
         }
 
 

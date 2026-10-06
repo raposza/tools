@@ -12,11 +12,11 @@ mentions a sandbox topology, a persistence MODE or a CaQL fixture belongs in
 ## Status
 
 **Holds `canton.install`, `canton.pqs`, `canton.dar`, `canton.topology` and
-`canton.process`.** Thirty-four classes, 200 tests.
+`canton.process`.** 64 source files and 367 tests, counted 2026-10-05.
 
 | package | classes |
 | --- | --- |
-| `canton/install/` | `CantonInstallation`, `CantonInstallations`, `CantonBuiltinConf`, `Edition`, `InstallException`, `InstallSource`, `PqsInstallation`, `PqsInstallations`, `PqsSource`, `ScribeBanner`, `ScribeProbe`, `VersionId` |
+| `canton/install/` | `CantonInstallation`, `CantonInstallations`, `CantonBuiltinConf`, `Edition`, `InstallException`, `InstallSource`, `PqsInstallation`, `PqsInstallations`, `PqsSource`, `ScribeBanner`, `VersionId` |
 | `canton/pqs/` | `PqsSpec`, `ScribeProcess`, `ScribeTables` |
 | `canton/dar/` | `CantonBuiltinDars`, `DarCatalog`, `DarException`, `DarInfo` |
 | `canton/topology/` | `CantonLine`, `Canton2xConfig`, `Canton3xBootstrap`, `Canton3xDaemonBootstrap`, `AuthOverlay`, `AdminTokenOverlay`, `DaemonPortsOverlay`, `RemoteConsoleOverlay`, `StorageOverlay`, `SandboxPorts`, `Sandbox2xPorts` |

@@ -7,10 +7,13 @@ import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
+import java.util.Deque;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -36,6 +39,18 @@ import javax.swing.text.DefaultCaret;
  * trace is harder to read than a scrolled one, and both cases occur in this
  * window.
  *
+ * <h2>...and a FIREHOSE pane starts it OFF - A-63, measured 2026-10-04</h2>
+ *
+ * His stall reports after the batching: 3.3 to 8.1 s on the event thread,
+ * every one in `JTextArea.getPreferredSize` - `WrappedPlainView.breakLines` -
+ * `Font.getStringBounds`, under `ScrollPaneLayout.layoutContainer` while the
+ * window validated. A wrapped area measures its lines again whenever its
+ * width is set anew, so the cost is the size of the document, and the Debug
+ * panes hold megabytes - Web alone is a line per wallet poll. Unwrapped,
+ * `PlainView` keeps its longest line up to date per insert and breaks
+ * nothing. {@link #useWrap} turns it off where the window builds a pane that
+ * fills like that; the checkbox still turns it on, at that cost.
+ *
  * <h2>The spinner</h2>
  *
  * A participant takes about 45 seconds on this machine and nearer three
@@ -48,6 +63,19 @@ import javax.swing.text.DefaultCaret;
  * once per line of DETAIL log. It is not a clock. A spinner driven by a timer
  * keeps turning after a process has stopped saying anything, which is precisely
  * the case a reader needs to see; this one stops when the output stops.
+ *
+ * <h2>Lines from other threads are appended in BATCHES - A-63, measured 2026-10-04</h2>
+ *
+ * This pane held the event thread for 101 s on his console. Every line came in
+ * as its own event and its own `JTextArea.append`, and with wrap on each
+ * insert makes `WrappedPlainView` rebuild its layout arrays and lay out every
+ * line it holds - `BoxView.updateLayoutArray`, `layoutMajorAxis` - so one
+ * insert costs the size of the pane, and a burst of a thousand lines costs a
+ * thousand full layouts. A line is now queued and a one-shot timer of
+ * {@link #N_MS_FLUSH} drains the queue into ONE insert and ONE caret move.
+ * On the event thread an append is still immediate, after the queue is
+ * drained in front of it, so what was printed before it stays before it and
+ * {@link #isEmpty()} keeps its meaning.
  *
  * Author Claude/bentzn
  */
@@ -89,11 +117,17 @@ public final class LogPane extends JPanel {
     /** Milliseconds between frames. */
     private static final int N_MS_FRAME = 400;
 
+    /** How long queued lines wait for company before one insert takes them all. */
+    private static final int N_MS_FLUSH = 40;
+
     private final JTextArea areaLog = new JTextArea();
 
     private final JCheckBox chkFollow = new JCheckBox("Follow", true);
 
     private final JCheckBox chkWrap = new JCheckBox("Wrap", true);
+
+    /** Follow, Wrap, Copy, Clear and whatever {@link #addControl} adds. */
+    private final JPanel bar;
 
     /** Whether lines carry the local time. Off for the firehose tabs. */
     private boolean flagClock;
@@ -114,6 +148,12 @@ public final class LogPane extends JPanel {
 
     private final transient javax.swing.Timer timerSpin =
             new javax.swing.Timer(N_MS_FRAME, evt -> tickHere());
+
+    /** Lines appended off the event thread, waiting for {@link #flushHere()}. */
+    private final transient Deque<String> lstQueued = new ArrayDeque<>();
+
+    private final transient javax.swing.Timer timerFlush =
+            new javax.swing.Timer(N_MS_FLUSH, evt -> flushHere());
 
 
     /** A pane with its control bar, which is what a firehose tab wants. */
@@ -188,7 +228,7 @@ public final class LogPane extends JPanel {
         // A JToolBar paints its buttons borderless, so `Clear` came out as
         // the word "Clear" sitting against the Follow checkbox and read as
         // part of its label. A plain panel gives the button its border back.
-        JPanel bar = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT,
+        bar = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT,
                 GuiTheme.scale(12), GuiTheme.scale(4)));
         bar.setOpaque(false);
         bar.add(chkFollow);
@@ -202,18 +242,32 @@ public final class LogPane extends JPanel {
         if (flagControls)
             add(bar, BorderLayout.SOUTH);
         add(scroll, BorderLayout.CENTER);
+
+        timerFlush.setRepeats(false);
     }
 
 
     /**
      * Safe from any thread: the append is hopped onto the event dispatch
      * thread here rather than at each of the four call sites, because the one
-     * that forgets is the one that corrupts the document.
+     * that forgets is the one that corrupts the document. Off the event
+     * thread the line is QUEUED and lands with the next flush - see the class
+     * comment.
      *
      * @param strLine one line, without its terminator
      */
     public void append(String strLine) {
-        onSwing(() -> appendHere(strLine, false));
+        if (SwingUtilities.isEventDispatchThread()) {
+            flushHere();
+            appendHere(strLine, false);
+            return;
+        }
+        synchronized (lstQueued) {
+            lstQueued.addLast(strLine);
+        }
+        // A Timer may be started from any thread; starting one that runs is
+        // a no-op, so a burst starts it once and the rest ride along.
+        timerFlush.start();
     }
 
 
@@ -287,12 +341,74 @@ public final class LogPane extends JPanel {
     }
 
 
+    /**
+     * Runs the task on the event thread AFTER the queued lines, so a spinner
+     * line or a clear never overtakes output that was printed before it.
+     */
     private void onSwing(Runnable task) {
         if (SwingUtilities.isEventDispatchThread()) {
+            flushHere();
             task.run();
             return;
         }
-        SwingUtilities.invokeLater(task);
+        SwingUtilities.invokeLater(() -> {
+            flushHere();
+            task.run();
+        });
+    }
+
+
+    /**
+     * EVENT THREAD ONLY. Every queued line, as one insert into the document
+     * and one caret move - the same text {@link #appendHere} would have
+     * produced line by line.
+     */
+    private void flushHere() {
+        timerFlush.stop();
+        StringBuilder bld = new StringBuilder();
+        int cntLine = 0;
+        synchronized (lstQueued) {
+            while (!lstQueued.isEmpty()) {
+                String strLine = lstQueued.removeFirst();
+                if (flagClock && !strLine.isBlank())
+                    bld.append(FMT_CLOCK.format(LocalTime.now())).append("  ");
+                bld.append(strLine).append('\n');
+                cntLine++;
+            }
+        }
+        if (cntLine == 0)
+            return;
+
+        closeSpin();
+        nOffsetLine = areaLog.getDocument().getLength();
+        areaLog.append(bld.toString());
+
+        if (areaLog.getDocument().getLength() > N_CHAR_MAX)
+            trim();
+        if (chkFollow.isSelected())
+            areaLog.setCaretPosition(areaLog.getDocument().getLength());
+    }
+
+
+    /**
+     * EVENT THREAD - the window calls it while it builds.
+     *
+     * @param comp a control of the pane's owner, after Clear
+     */
+    public void addControl(JComponent comp) {
+        bar.add(comp);
+    }
+
+
+    /**
+     * EVENT THREAD - the window calls it while it builds.
+     *
+     * @param flagOn whether long lines wrap; the Wrap box follows
+     */
+    public void useWrap(boolean flagOn) {
+        chkWrap.setSelected(flagOn);
+        areaLog.setLineWrap(flagOn);
+        areaLog.setWrapStyleWord(flagOn);
     }
 
 

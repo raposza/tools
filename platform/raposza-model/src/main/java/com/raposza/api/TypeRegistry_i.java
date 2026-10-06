@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.api;
 
+import com.raposza.api.model.ChoiceInfo;
 import com.raposza.api.model.DataId;
 import com.raposza.api.model.DataShape;
 import com.raposza.api.model.TemplateInfo;
@@ -74,6 +75,23 @@ public interface TypeRegistry_i {
      * @return matching templates
      */
     List<TemplateInfo> templatesByName(String nameShort);
+
+
+    /**
+     * The choices an INTERFACE declares, as the interface declares them - no
+     * union and no de-duplication. A template's choice list is the union by
+     * name, which keeps ONE of two same-named choices from two interfaces; an
+     * exercise that has to say which interface it means reads this instead.
+     *
+     * Empty by default, which is the honest answer for a registry that holds
+     * no interfaces.
+     *
+     * @param idInterface the interface
+     * @return its choices, empty when unknown
+     */
+    default List<ChoiceInfo> interfaceChoices(DataId idInterface) {
+        return List.of();
+    }
 
 
     /**

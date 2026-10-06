@@ -27,7 +27,9 @@ import com.raposza.runtime.lifecycle.StackService_i;
 import com.raposza.runtime.localnet.LocalNetAuth;
 import com.raposza.runtime.localnet.LocalNetPorts;
 import com.raposza.runtime.localnet.LocalNetSpec;
+import com.raposza.runtime.db.PostgresCoordinates;
 import com.raposza.runtime.localnet.LocalNetRunner;
+import com.raposza.runtime.localnet.LocalNetUi;
 import com.raposza.runtime.localnet.SpliceInstallations;
 import com.raposza.sandbox.StackComponent;
 import com.raposza.sandbox.app.JwtMintProcess;
@@ -38,6 +40,12 @@ import com.raposza.sandbox.app.AuthSettings;
 import com.raposza.sandbox.app.DiscoveryDoc;
 import com.raposza.sandbox.app.DiscoveryNode;
 import com.raposza.sandbox.app.DiscoveryServer;
+import com.raposza.sandbox.app.ProviderUsers;
+import com.raposza.sandbox.app.RawarClient;
+import com.raposza.sandbox.app.RawarEnv;
+import com.raposza.sandbox.app.RawarServer;
+import com.raposza.sandbox.app.RawarSites;
+import com.raposza.sandbox.app.SandboxUsers;
 import com.raposza.sandbox.app.Milestones;
 import com.raposza.sandbox.app.ReadyReport;
 import com.raposza.sandbox.app.SandboxOptions;
@@ -57,8 +65,10 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -67,6 +77,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 import javax.swing.Box;
@@ -86,6 +98,7 @@ import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
+import javax.swing.plaf.basic.BasicSplitPaneUI;
 
 /**
  * The Sandbox control surface: what to start, whether it is up, what each
@@ -223,6 +236,12 @@ public final class SandboxWindow extends JFrame {
     private final transient DiscoveryServer discovery = new DiscoveryServer();
 
     /**
+     * The RAWAR server - `rawar.md` section 5. The window's, like the
+     * discovery endpoint, and it serves from the same snapshot.
+     */
+    private final transient RawarServer rawar = new RawarServer();
+
+    /**
      * The last document, built on the event thread and read by the discovery
      * handler's own thread. VOLATILE because those are two threads and this is
      * the whole of what passes between them.
@@ -266,6 +285,12 @@ public final class SandboxWindow extends JFrame {
     /** How much of the right column the Status card opens with. */
     private static final double N_FRACTION_STATUS = 0.70;
 
+    /** The form's share of the Sandbox tab's width - 40 / 60, his instruction, 2026-10-04. */
+    private static final double N_FRACTION_FORM = 0.40;
+
+    /** True once the developer has pressed the form/status divider; it is then left alone. */
+    private transient boolean flagDividerDragged;
+
     private final StatusPane status = new StatusPane();
 
     private final LampBar lamps = new LampBar();
@@ -279,6 +304,17 @@ public final class SandboxWindow extends JFrame {
      * the firehose is a tab away, per component, where it always was.
      */
     private final LogPane logMain = new LogPane(false);
+
+    /**
+     * THE LEDGER LOG, beside the application one - his instruction,
+     * 2026-10-04: a line per contract created and per contract archived on
+     * each participant, so a reader can see that something happened and which
+     * template it involved. {@link LedgerWatch} reads them; it follows the
+     * participant databases while the stack is RUNNING and nothing otherwise.
+     */
+    private final LogPane logLedger = new LogPane(false);
+
+    private final transient LedgerWatch ledgerWatch = new LedgerWatch(logLedger::append);
 
     /**
      * NOT final. The profile store's ROOT is a global setting, so a save on the
@@ -389,8 +425,12 @@ public final class SandboxWindow extends JFrame {
     /** Where the JSON API tab goes back when a 2.x is selected again. */
     private static final int N_TAB_JSON_API = 2;
 
-    /** The one tab the three component logs live under. */
-    private static final String STR_TAB_LOGS = "Logs";
+    /**
+     * The one tab the component logs live under. `Debug`, not `Logs` - his
+     * instruction, 2026-10-04: what a user reads is on Sandbox, Web and OIDC,
+     * and this is the processes' own output.
+     */
+    private static final String STR_TAB_LOGS = "Debug";
 
     /**
      * WHICH DARS THE NEXT START UPLOADS. Its own tab rather than a row on the
@@ -419,8 +459,30 @@ public final class SandboxWindow extends JFrame {
      */
     private final transient Map<String, DarsLivePane> mapDarsLocal = new LinkedHashMap<>();
 
-    /** The web UIs, the users and the password - `todo.md` A-40. LocalNetND only. */
-    private final WebUiPane paneWebUi = new WebUiPane();
+    /**
+     * The Web tab: every page this window serves - LocalNetND's UIs, each
+     * participant's JSON Ledger API and the RAWARs - with its node and URL.
+     * His instruction, 2026-10-02; `todo.md` A-40 before it.
+     */
+    private final WebPane paneWeb = new WebPane();
+
+    /** OIDC's Users tab: who can sign in, on which node, with which password. */
+    private final UsersPane paneUsers = new UsersPane();
+
+    private static final String STR_TAB_WEB = "Web";
+
+    /** How long a Users registration waits for the provider to mint. */
+    private static final Duration DUR_USERS_MINT = Duration.ofSeconds(30);
+
+    /**
+     * How often the Users tab reads the OIDC server again - his instruction,
+     * 2026-10-04: no Refresh button, "auto refresh every 3 seconds".
+     */
+    private static final int N_MS_USERS = 3000;
+
+    /** The state line and the milestone when the ledger's users were not written. */
+    private static final String STR_USERS_REGISTER_FAILED =
+            "OIDC user registration FAILED, a RAWAR page cannot sign in - ";
 
     /** What the running LocalNetND verifies, which decides the password column. */
     private transient LocalNetAuth authLocalRunning;
@@ -607,10 +669,50 @@ public final class SandboxWindow extends JFrame {
     private final transient LogTail tailLocalSplice = new LogTail(
             () -> fileLocalNetLog("splice.log"), strLine -> logSplice.append(strLine));
 
+    /** The raw line on Debug, and worded on the Web tab's Log. */
     private final transient LogTail tailLocalWeb = new LogTail(
-            () -> fileLocalNetLog("web.log"), strLine -> logWeb.append(strLine));
+            () -> fileLocalNetLog("web.log"), strLine -> {
+                logWeb.append(strLine);
+                paneWeb.access(WebAccess.strLocalNet(strLine));
+            });
 
     private final transient Timer timerLamp;
+
+    /** Reads the Users tab again every {@link #N_MS_USERS}. */
+    private final transient Timer timerUsers;
+
+    /** One read at a time: a tick that finds one under way skips. */
+    private final transient AtomicBoolean flagUsersBusy = new AtomicBoolean();
+
+    /**
+     * A start or the fixture asked for EVERY ledger user to be written, not
+     * only the ones the server lacks - a write sets the password, the rule
+     * `SandboxUsers` follows. Held until a read of the ledger runs it.
+     */
+    private final transient AtomicBoolean flagUsersAllDue = new AtomicBoolean();
+
+    /**
+     * For the OIDC lamp: the server answered with its users, and no stack is
+     * between a start and its users being written. Written off the event
+     * thread.
+     */
+    private volatile boolean flagUsersComplete;
+
+    /**
+     * Counts the window's state changes, so a read begun before a start does
+     * not turn the lamp green once the start is under way.
+     */
+    private final transient AtomicInteger cntUsersEpoch = new AtomicInteger();
+
+    /**
+     * The bearer the single participant's users are read with. Minted once
+     * and again only when the ledger refuses it, so the access log does not
+     * carry a mint every {@link #N_MS_USERS}.
+     */
+    private transient volatile String strTokenUsers;
+
+    /** The last failure the Users tab reported, so a milestone is written once. */
+    private transient volatile String strUsersFailLast;
 
     private transient SandboxService service;
 
@@ -694,7 +796,9 @@ public final class SandboxWindow extends JFrame {
         mapLog.put(LocalNetRunner.STR_NS_SPLICE, logSplice);
         mapLog.put(LocalNetRunner.STR_COMP_WEB, logWeb);
         if (isLocalNet()) {
-            form.useSplice(SpliceInstallations.lstVersion());
+            // READ WHILE THE TOPOLOGY QUESTION WAS OPEN - A-63 (b).
+            OpenPrefetch.Splice splice = OpenPrefetch.splice();
+            form.useSplice(splice.lstVersion(), splice.mapShown());
             // THE AUTH ROWS ARE FILLED HERE, AND NOWHERE ELSE ON THIS
             // TOPOLOGY. `installChanged` is what fills them on the Sandbox
             // path and it runs off a `CantonInstallation` selection, which
@@ -766,17 +870,24 @@ public final class SandboxWindow extends JFrame {
             tabsDars.addTab("Participant", paneDarsLive);
         }
         tabs.addTab("DARs", tabsDars);
-        // A-40 UNDER OIDC, NOT BESIDE IT: the users are the provider's users,
-        // and A-3 is his precedent against adding top-level tabs.
-        if (isLocalNet()) {
-            JTabbedPane tabsOidc = new JTabbedPane();
-            tabsOidc.addTab("Provider", paneJwt);
-            tabsOidc.addTab("Web UIs", paneWebUi);
-            tabs.addTab(STR_TAB_OIDC, tabsOidc);
-        }
-        else {
-            tabs.addTab(STR_TAB_OIDC, paneJwt);
-        }
+        // WEB AT THE TOP LEVEL, ON BOTH TOPOLOGIES - his instruction,
+        // 2026-10-02. The pages are the RAWARs as well as Splice's UIs, and a
+        // RAWAR is served on either topology.
+        tabs.addTab(STR_TAB_WEB, paneWeb);
+        // USERS UNDER OIDC, NOT BESIDE IT: they are the provider's users -
+        // his instruction, 2026-10-02, and the A-40 reasoning before it.
+        JTabbedPane tabsOidc = new JTabbedPane();
+        tabsOidc.addTab("Provider", paneJwt);
+        tabsOidc.addTab("Users", paneUsers);
+        tabs.addTab(STR_TAB_OIDC, tabsOidc);
+        paneWeb.useRefresh(this::webRefresh);
+        // AND WHENEVER THE TAB IS OPENED, so the list is current without a
+        // click - a RAWAR added on disk is served at once, and the tab that
+        // names them should not lag behind the server.
+        tabs.addChangeListener(evt -> {
+            if (tabs.getSelectedComponent() == paneWeb)
+                webRefresh();
+        });
         tabs.addTab("Settings", paneSettings);
 
         lblFooter.setForeground(GuiTheme.colMuted());
@@ -796,6 +907,10 @@ public final class SandboxWindow extends JFrame {
         paneSettings.useSavedSink(this::settingsSaved);
         setStateChip(SandboxService.State.STOPPED);
         logMain.useClock(true);
+        logLedger.useClock(true);
+        // EVERY REQUEST TO A RAWAR, on the Web tab - his instruction,
+        // 2026-10-04. Set once; the server keeps it across its rebinds.
+        rawar.useAccess(access -> paneWeb.access(WebAccess.strRawar(access)));
         // ONE SHOT. A repeating timer would put the footer back every three
         // seconds for the life of the window, which is a repaint per tick
         // forever to undo something that was already undone.
@@ -852,6 +967,11 @@ public final class SandboxWindow extends JFrame {
         // being told - which is exactly the case a push would miss.
         timerLamp = new Timer(N_MS_LAMP, evt -> {
             lamps.setStack(stack());
+            // NOT A STACK COMPONENT - it runs with or without one - so it is
+            // read off the OIDC pane rather than the stack, and green only
+            // once the Users tab has read every user - `LampBar.healthOidc`.
+            lamps.setOidcHealth(LampBar.healthOidc(paneJwt.isProviderUp(),
+                    JwtMintProcess.isExternal(), flagUsersComplete));
             paneJsonApi.refresh();
             // THE SNAPSHOT THE DISCOVERY ENDPOINT SERVES, built here because
             // this is a tick that already holds the event thread. Reading the
@@ -861,6 +981,9 @@ public final class SandboxWindow extends JFrame {
         });
         timerLamp.setRepeats(true);
         timerLamp.start();
+        timerUsers = new Timer(N_MS_USERS, evt -> usersRefresh());
+        timerUsers.setRepeats(true);
+        timerUsers.start();
 
         sizeToScreen();
 
@@ -891,6 +1014,338 @@ public final class SandboxWindow extends JFrame {
         installChanged(form.selected());
         // LAST, so the first document describes a window that is fully wired.
         discoveryRebind();
+        rawarRebind();
+        webRefresh();
+    }
+
+
+    /**
+     * Rebuilds the Web tab from what is serving right now. Event thread.
+     *
+     * THE RAWARS ARE LISTED WITH NO STACK, because the server that serves them
+     * is the window's and a developer edits pages before starting anything.
+     * The stack's own rows - LocalNetND's UIs, the JSON Ledger APIs - only
+     * while it runs.
+     */
+    private void webRefresh() {
+        List<WebPane.Row> lstRow = new ArrayList<>();
+        String strNodeRawar;
+        if (isLocalNet()) {
+            strNodeRawar = DiscoveryNode.STR_ROLE_APP_PROVIDER;
+            LocalNetRunner runnerHere = runner;
+            if (runnerHere != null && stateNow == SandboxService.State.RUNNING)
+                lstRow.addAll(WebPane.lstRowLocalNet(runnerHere.lstPageWeb(),
+                        mapJsonLocal(runnerHere)));
+        }
+        else {
+            strNodeRawar = StorageOverlay.STR_NODE_PARTICIPANT;
+            SandboxService serviceHere = service;
+            String strPortJson = serviceHere == null || !serviceHere.isRunning() ? null
+                    : serviceHere.report().value(ReadyReport.KEY_JSON_API);
+            if (strPortJson != null)
+                lstRow.addAll(WebPane.lstRowJson(Map.of(strNodeRawar,
+                        "http://127.0.0.1:" + strPortJson)));
+        }
+        // THE STATE LINE SAYS WHERE THE RAWARS ARE READ FROM, WHAT IS NOT
+        // SERVED AND WHEN. A Refresh that found nothing new looked exactly
+        // like a Refresh that did nothing - 2026-10-02, his report - and a
+        // RAWAR put anywhere but this directory is never found.
+        String strState;
+        if (rawar.isRunning()) {
+            RawarSites.Scan scanNow = rawar.scan();
+            lstRow.addAll(WebPane.lstRowRawar(scanNow, rawar.nPort(), strNodeRawar));
+            strState = "RAWARs from " + rawar.dirRoot()
+                    + (scanNow.lstProblem().isEmpty() ? ""
+                            : " - NOT SERVED: " + String.join("; ", scanNow.lstProblem()))
+                    + " - refreshed " + LocalTime.now().withNano(0);
+        }
+        else {
+            strState = rawar.strStatus(RaposzaSettings.current().nPortRawar());
+        }
+        paneWeb.show(lstRow, strState);
+    }
+
+
+    /**
+     * Reads the Users tab again. Event thread; every {@link #N_MS_USERS}, and
+     * at once after a start, a stop and the fixture.
+     *
+     * Every row is a user the OIDC SERVER holds - his instruction, 2026-10-04,
+     * "The tab belongs to the freakin' server" - so it is read whenever the
+     * window's own server runs, with or without a stack. What the window knows
+     * besides is the node: on LocalNetND the role users the start registered -
+     * `registerAtProvider`; on the single participant every ledger user, which
+     * this read writes to the server when the server lacks it - `SandboxUsers`
+     * - so a user a Daml script made after the start can sign in within a tick.
+     */
+    private void usersRefresh() {
+        if (JwtMintProcess.isExternal()) {
+            paneUsers.show(List.of(), strWhyNoUsers());
+            return;
+        }
+        if (!paneJwt.isMintRunning()) {
+            flagUsersComplete = false;
+            strTokenUsers = null;
+            paneUsers.show(List.of(), "the OIDC server is not running");
+            return;
+        }
+        // A STACK BETWEEN STOPPED AND RUNNING has users still to be written,
+        // so no read taken now is every user - the OIDC lamp stays amber.
+        boolean flagSettled = stateNow == SandboxService.State.STOPPED
+                || stateNow == SandboxService.State.RUNNING;
+        if (!flagSettled)
+            flagUsersComplete = false;
+        if (!flagUsersBusy.compareAndSet(false, true))
+            return;
+        int nEpoch = cntUsersEpoch.get();
+
+        List<UsersPane.Row> lstKnown = List.of();
+        LedgerRead read = null;
+        if (isLocalNet()) {
+            LocalNetRunner runnerHere = runner;
+            String strPassword = strPasswordWebUi();
+            if (runnerHere != null && stateNow == SandboxService.State.RUNNING
+                    && strPassword != null)
+                lstKnown = UsersPane.lstRowLocalNet(runnerHere.lstPageWeb(), strPassword);
+        }
+        else {
+            read = ledgerReadNow();
+        }
+        List<UsersPane.Row> lstKnownHere = lstKnown;
+        LedgerRead readHere = read;
+        Thread thread = new Thread(() -> {
+            try {
+                usersRead(lstKnownHere, readHere, flagSettled, nEpoch);
+            }
+            finally {
+                flagUsersBusy.set(false);
+            }
+        }, "raposza-users");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+
+    /** A start or the fixture: every ledger user is written, not only the new ones. */
+    private void usersRefreshAll() {
+        flagUsersAllDue.set(true);
+        usersRefresh();
+    }
+
+
+    /**
+     * What reading the single participant's users needs, taken on the event
+     * thread.
+     *
+     * @param auth what the participant checks
+     * @param version the Canton running
+     * @param strUrlJson its JSON Ledger API, no trailing slash
+     */
+    private record LedgerRead(AuthSettings auth, VersionId version, String strUrlJson) {
+    }
+
+
+    /**
+     * @return what reading the ledger's users needs, or null when there is no
+     *         ledger to read or its tokens are not checked against this server
+     */
+    private LedgerRead ledgerReadNow() {
+        SandboxService serviceHere = service;
+        CantonInstallation instNow = form.selected();
+        AuthSettings authHere = form.auth();
+        String strPortJson = serviceHere == null || !serviceHere.isRunning() ? null
+                : serviceHere.report().value(ReadyReport.KEY_JSON_API);
+        if (strPortJson == null || instNow == null || authHere == null
+                || !authHere.mode().flagTargets())
+            return null;
+        return new LedgerRead(authHere, instNow.version(), "http://127.0.0.1:" + strPortJson);
+    }
+
+
+    /**
+     * The read itself. OFF the event thread: it is HTTP, and a first mint
+     * waits for the server.
+     *
+     * @param lstKnown the rows for the role users a running LocalNetND wrote
+     * @param read the single participant's ledger, or null
+     * @param flagSettled whether no start or stop was under way
+     * @param nEpoch {@link #cntUsersEpoch} when the read was asked for
+     */
+    private void usersRead(List<UsersPane.Row> lstKnown, LedgerRead read, boolean flagSettled,
+            int nEpoch) {
+        String strUrlBase = JwtMintProcess.strUrlBase();
+        String strStage = "";
+        try {
+            ProviderUsers.Listing listing = ProviderUsers.read(strUrlBase);
+            List<UsersPane.Row> lstKnownAll = lstKnown;
+            if (read != null) {
+                strStage = STR_USERS_REGISTER_FAILED;
+                List<String> lstLedger = lstLedgerUsers(read);
+                boolean flagAll = flagUsersAllDue.getAndSet(false);
+                List<String> lstWrite = new ArrayList<>();
+                for (String strUser : lstLedger) {
+                    if (flagAll || !listing.lstName().contains(strUser))
+                        lstWrite.add(strUser);
+                }
+                if (!lstWrite.isEmpty()) {
+                    SandboxUsers.register(strUrlBase, lstWrite);
+                    String strNote = "OIDC users " + String.join(", ", lstWrite)
+                            + " - password " + JwtMintProcess.STR_PASSWORD;
+                    SwingUtilities.invokeLater(() -> paneJwt.note(strNote));
+                    strStage = "";
+                    listing = ProviderUsers.read(strUrlBase);
+                }
+                lstKnownAll = UsersPane.lstRowSandbox(lstLedger,
+                        StorageOverlay.STR_NODE_PARTICIPANT, JwtMintProcess.STR_PASSWORD);
+            }
+            // THE PASSWORDS FROM THE SERVER'S OWN FILE - his instruction,
+            // 2026-10-04. The API never returns one; `ProviderUsers` says why
+            // the file may be read here.
+            Map<String, String> mapPassword = Map.of();
+            String strWhyNoPassword = "";
+            try {
+                mapPassword = ProviderUsers.mapPassword(Path.of(listing.strFile()));
+            }
+            catch (IOException | RuntimeException ex) {
+                strWhyNoPassword = " - passwords not readable: " + ex.getMessage();
+            }
+            List<UsersPane.Row> lstRow = UsersPane.lstRowProvider(listing.lstName(), mapPassword,
+                    lstKnownAll);
+            String strState = lstRow.size() + " OIDC users - " + listing.strFile()
+                    + strWhyNoPassword;
+            strUsersFailLast = null;
+            flagUsersComplete = flagSettled && nEpoch == cntUsersEpoch.get();
+            SwingUtilities.invokeLater(() -> paneUsers.show(lstRow, strState));
+        }
+        catch (IOException ex) {
+            flagUsersComplete = false;
+            String strWhy = ex.getMessage() == null ? ex.getClass().getSimpleName()
+                    : ex.getMessage();
+            String strLine = !strStage.isEmpty() ? strStage + strWhy
+                    : ex instanceof ConnectException ? "waiting for the OIDC server to answer"
+                            : "the OIDC server's users could not be read - " + strWhy;
+            boolean flagMilestone = !strStage.isEmpty() && !strLine.equals(strUsersFailLast);
+            strUsersFailLast = strLine;
+            SwingUtilities.invokeLater(() -> {
+                paneUsers.state(strLine);
+                if (flagMilestone)
+                    milestone(strLine);
+            });
+        }
+        catch (InterruptedException ex) {
+            flagUsersComplete = false;
+            Thread.currentThread().interrupt();
+        }
+    }
+
+
+    /**
+     * The participant's users, with the bearer minted last time while the
+     * ledger takes it - see {@link #strTokenUsers}.
+     *
+     * @param read the ledger
+     * @return its users, in ledger order
+     * @throws IOException when the ledger refuses a fresh token too
+     * @throws InterruptedException when interrupted while waiting
+     */
+    private List<String> lstLedgerUsers(LedgerRead read) throws IOException, InterruptedException {
+        String strToken = strTokenUsers;
+        if (strToken != null) {
+            try {
+                return SandboxUsers.lstRead(read.strUrlJson(), strToken);
+            }
+            catch (IOException ex) {
+                // EXPIRED, or another stack since: minted again below.
+                strTokenUsers = null;
+            }
+        }
+        strToken = JwtMintProcess.strMintBlocking(read.auth(), read.version(),
+                JwtPane.STR_USER_ADMIN, StorageOverlay.STR_NODE_PARTICIPANT, DUR_USERS_MINT);
+        if (strToken == null)
+            throw new IOException("the provider minted no token for " + JwtPane.STR_USER_ADMIN
+                    + " within " + DUR_USERS_MINT);
+        List<String> lstOut = SandboxUsers.lstRead(read.strUrlJson(), strToken.trim());
+        strTokenUsers = strToken.trim();
+        return lstOut;
+    }
+
+
+    /**
+     * @return why the window registered nobody - an external provider is
+     *         somebody else's, and a stack with auth off checks no token
+     */
+    private String strWhyNoUsers() {
+        if (JwtMintProcess.isExternal())
+            return "an external provider - its users are managed there";
+        return "auth is off - no token is checked, so nobody signs in";
+    }
+
+
+    /**
+     * Binds the RAWAR server, or says why it could not - the shape and the
+     * reasons of {@link #discoveryRebind}: silent on success, a notice and
+     * not a dialog on a conflict.
+     *
+     * A MOVED HOME MOVES THE PAGES. The directory is read from the settings
+     * every time, so a bind that kept the old one would serve the RAWARs of a
+     * home the Settings tab no longer names.
+     */
+    private void rawarRebind() {
+        RaposzaSettings settingsNow = RaposzaSettings.current();
+        int nPortWanted = settingsNow.nPortRawar();
+        Path dirWanted = settingsNow.dirRawars();
+        if (rawar.isRunning() && rawar.nPort() == nPortWanted && dirWanted.equals(rawar.dirRoot()))
+            return;
+        try {
+            rawar.start(nPortWanted, dirWanted, () -> docDiscovery);
+        }
+        catch (IOException ex) {
+            milestone("RAWAR port " + nPortWanted + " is in use - change the RAWAR port on the"
+                    + " Settings tab");
+        }
+    }
+
+
+    /**
+     * Says where the RAWARs are, once a stack is up, and registers their
+     * client at the window's own provider when it is checking clients -
+     * {@link RawarClient}. Off the event thread: the provider is a request
+     * away.
+     *
+     * NOTHING WHEN NONE IS SERVED. A developer who has written no page has
+     * nothing to be told about, and a line per start saying so is noise.
+     */
+    private void rawarAnnounce() {
+        if (!rawar.isRunning())
+            return;
+        List<String> lstMount = rawar.scan().lstMount();
+        if (lstMount.isEmpty())
+            return;
+        milestone("RAWARs - " + rawar.strStatus(rawar.nPort()));
+        AuthSettings authHere = form.auth();
+        if (JwtMintProcess.isExternal() || authHere == null || !authHere.mode().flagTargets()
+                || !paneJwt.isMintRunning())
+            return;
+        List<String> lstRedirect = RawarEnv.lstRedirect(rawar.nPort(), lstMount);
+        Thread thread = new Thread(() -> {
+            try {
+                String strLine = RawarClient.strRegister(JwtMintProcess.strUrlBase(), lstRedirect);
+                SwingUtilities.invokeLater(() -> paneJwt.note(strLine));
+            }
+            catch (IOException ex) {
+                String strLine = "RAWAR client registration FAILED, the pages cannot sign in - "
+                        + ex.getMessage();
+                SwingUtilities.invokeLater(() -> {
+                    paneJwt.note(strLine);
+                    milestone(strLine);
+                });
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }, "raposza-rawar-client");
+        thread.setDaemon(true);
+        thread.start();
     }
 
 
@@ -1415,8 +1870,14 @@ public final class SandboxWindow extends JFrame {
         pnlStatus.add(lamps, BorderLayout.NORTH);
         pnlStatus.add(status, BorderLayout.CENTER);
 
+        // TWO LOGS IN ONE CARD: what the application did, and what the
+        // ledger did - his instruction, 2026-10-04; `Main`, not `Application`,
+        // his correction the same day.
+        JTabbedPane tabsLog = new JTabbedPane();
+        tabsLog.addTab("Main", logMain);
+        tabsLog.addTab("Ledger", logLedger);
         JSplitPane splitRight = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
-                GuiTheme.card("Status", pnlStatus), GuiTheme.card(null, logMain));
+                GuiTheme.card("Status", pnlStatus), GuiTheme.card(null, tabsLog));
         splitRight.setBorder(null);
         splitRight.setResizeWeight(0.45);
         splitRight.setDividerSize(GuiTheme.scale(8));
@@ -1440,25 +1901,38 @@ public final class SandboxWindow extends JFrame {
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, scrollForm, splitRight);
         split.setBorder(null);
-        split.setResizeWeight(0.35);
+        split.setResizeWeight(N_FRACTION_FORM);
         split.setDividerSize(GuiTheme.scale(8));
-        // 35 / 65, ASKED FOR AND SET WHEN THERE IS A WIDTH TO TAKE A FRACTION
-        // OF. `setDividerLocation(double)` is a no-op on a split pane that has
-        // not been laid out yet, and this one is built inside the constructor,
-        // so the fraction is applied on the first resize and never again - a
-        // divider a developer drags must stay where it was put.
+        // 40 / 60 - his instruction, 2026-10-04 - AND HELD AT EVERY RESIZE
+        // UNTIL THE DIVIDER IS DRAGGED. Placed once, on the first resize, it
+        // opened at 58 percent at his console on 2026-10-04: a width the split
+        // was given after the first placement did not keep the fraction, and
+        // which layout pass did that was not measured. Re-applying it on every
+        // resize does not depend on the answer.
+        //
+        // A DRAG IS A PRESS ON THE DIVIDER. A change of the divider location
+        // is not: the split's own layout moves it on every resize - measured
+        // under Xvfb, JDK 21, three resizes each read as a drag - so only the
+        // mouse on the divider stops the re-placing, and from then on the
+        // divider stays where the developer put it.
         split.addComponentListener(new ComponentAdapter() {
-
-            private boolean flagPlaced;
 
             @Override
             public void componentResized(ComponentEvent evt) {
-                if (flagPlaced || split.getWidth() <= 0)
+                if (flagDividerDragged || split.getWidth() <= 0)
                     return;
-                flagPlaced = true;
-                split.setDividerLocation(0.35);
+                split.setDividerLocation(N_FRACTION_FORM);
             }
         });
+        if (split.getUI() instanceof BasicSplitPaneUI uiSplit) {
+            uiSplit.getDivider().addMouseListener(new MouseAdapter() {
+
+                @Override
+                public void mousePressed(MouseEvent evt) {
+                    flagDividerDragged = true;
+                }
+            });
+        }
 
         JPanel pnlTab = new JPanel(new BorderLayout());
         pnlTab.setOpaque(false);
@@ -1609,6 +2083,17 @@ public final class SandboxWindow extends JFrame {
             inner.addTab("Participant", logParticipant);
             inner.addTab("PQS", logPqs);
         }
+        // THE OPENID PROVIDER'S OWN OUTPUT, moved here off the OIDC tab - his
+        // instruction, 2026-10-04. That tab shows who asked it for what.
+        inner.addTab("OIDC", paneJwt.logService());
+        // UNWRAPPED, every pane here - A-63, measured 2026-10-04: a wrapped
+        // area of megabytes held the event thread 3 to 8 s per validate in
+        // `WrappedPlainView.breakLines`. `LogPane` says why; Wrap still turns
+        // it back on, pane by pane.
+        for (int idxTab = 0; idxTab < inner.getTabCount(); idxTab++) {
+            if (inner.getComponentAt(idxTab) instanceof LogPane paneLog)
+                paneLog.useWrap(false);
+        }
 
         JPanel pnlTab = new JPanel(new BorderLayout());
         pnlTab.setOpaque(false);
@@ -1637,7 +2122,7 @@ public final class SandboxWindow extends JFrame {
         window.setVisible(true);
         // REVALIDATED ONCE IT IS ON SCREEN. Several of the panels size
         // themselves from a width that does not exist until the frame is
-        // realised - the split's 0.35 among them - and a layout computed
+        // realised - the split's 0.40 among them - and a layout computed
         // before that leaves fields clipped until the operator resizes the
         // window by hand. The pass is one shot and costs nothing.
         SwingUtilities.invokeLater(() -> {
@@ -1844,6 +2329,8 @@ public final class SandboxWindow extends JFrame {
         // rebound would leave the endpoint on the number the tab no longer
         // shows.
         discoveryRebind();
+        rawarRebind();
+        webRefresh();
         // THE PORTS ARE IN THE LOCALNETND KEY - `todo.md` A-42. A first port or
         // a PostgreSQL port saved here names another founding store and another
         // snapshot root, and the Settings tab and the list must say so before
@@ -2110,6 +2597,9 @@ public final class SandboxWindow extends JFrame {
         milestone(flagGreen ? STR_AVIATION_DONE : STR_AVIATION_FAILED);
         footerSettles(STR_FOOTER_RUNNING);
         aviationIdle();
+        // THE FIXTURE MADE LEDGER USERS, and a user the provider has not been
+        // told about cannot sign in.
+        usersRefreshAll();
     }
 
 
@@ -3034,8 +3524,12 @@ public final class SandboxWindow extends JFrame {
         if (JwtMintProcess.isExternal() || authHere == null || !authHere.isProvider())
             return;
         try {
+            // THE UPSTREAM NAMES TOO: a page opened as `wallet.localhost` signs
+            // in and is sent back there, so that origin has to be registered.
+            List<LocalNetUi.Page> lstPageAll = new ArrayList<>(runnerHere.lstPageWeb());
+            lstPageAll.addAll(runnerHere.lstPageAliasWeb());
             List<String> lstLine = MintRegistration.lstRegister(JwtMintProcess.strUrlBase(),
-                    runnerHere.lstPageWeb());
+                    lstPageAll);
             SwingUtilities.invokeLater(() -> lstLine.forEach(paneJwt::note));
         }
         catch (IOException ex) {
@@ -3067,11 +3561,14 @@ public final class SandboxWindow extends JFrame {
         mapRow.putAll(runnerHere.mapReach());
         status.setRows(mapRow);
         lamps.setStack(runnerHere);
+        rawarAnnounce();
         startLocalNetPqs();
         mapDarsLocal.values().forEach(DarsLivePane::refresh);
-        paneWebUi.show(runnerHere.lstPageWeb(), mapJsonLocal(runnerHere), strPasswordWebUi());
+        webRefresh();
         enterState(SandboxService.State.RUNNING);
         applyControls(SandboxService.State.RUNNING);
+        // AFTER RUNNING: the Users tab lists the role users of a RUNNING stack.
+        usersRefresh();
         // THE WALL CLOCK, the same instrument the Sandbox path uses and the
         // same phrasing: between the component milestones sit the port wait,
         // the bootstrap and the founding, and a total that left those out
@@ -3108,6 +3605,7 @@ public final class SandboxWindow extends JFrame {
         // A SUCCESSFUL BIND IS STILL SILENT and a bind that is already good
         // returns on the first `if`, so the ordinary start says nothing new.
         discoveryRebind();
+        rawarRebind();
         if (isLocalNet()) {
             startLocalNet();
             return;
@@ -3362,6 +3860,9 @@ public final class SandboxWindow extends JFrame {
         enterState(SandboxService.State.RUNNING);
         footerSettles(STR_FOOTER_RUNNING);
         discoveryWarnIfUnbound();
+        rawarAnnounce();
+        webRefresh();
+        usersRefreshAll();
         status.setReport(serviceHere.report().withFirst(ReadyReport.KEY_DISCOVERY,
                 strPortDiscovery()),
                 String.valueOf(serviceHere.fileStatus()));
@@ -3534,7 +4035,9 @@ public final class SandboxWindow extends JFrame {
         paneDars.refresh();
         paneDarsLive.reset();
         mapDarsLocal.values().forEach(DarsLivePane::reset);
-        paneWebUi.reset();
+        webRefresh();
+        strTokenUsers = null;
+        usersRefresh();
         // THE FIXTURE LAMP GOES OFF WITH THE STACK. It was left on the last
         // fixture result, so a stopped window showed a green Test fixture over
         // a ledger that was no longer there.
@@ -3773,7 +4276,9 @@ public final class SandboxWindow extends JFrame {
             discardFixtures();
             removeHook();
             timerLamp.stop();
+            timerUsers.stop();
             discovery.stop();
+            rawar.stop();
             paneJwt.stopService();
             dispose();
             return;
@@ -3791,7 +4296,9 @@ public final class SandboxWindow extends JFrame {
             saveProfile();
             discardFixtures();
             timerLamp.stop();
+            timerUsers.stop();
             discovery.stop();
+            rawar.stop();
             paneJwt.stopService();
             dispose();
         });
@@ -3942,6 +4449,39 @@ public final class SandboxWindow extends JFrame {
      *
      * @return never null
      */
+    /**
+     * Where each participant of the running stack keeps its ledger, for the
+     * Ledger log.
+     *
+     * On LocalNetND the three participants share the stack's PostgreSQL and
+     * `LocalNetSpec` names their databases; on the Sandbox topology the ready
+     * report carries the one participant's JDBC url, or nothing when it runs
+     * in memory - and then there is nothing to follow.
+     *
+     * @return node label to coordinates, possibly empty; never null
+     */
+    private Map<String, PostgresCoordinates> mapLedgerDatabases() {
+        Map<String, PostgresCoordinates> mapOut = new LinkedHashMap<>();
+        if (isLocalNet()) {
+            int nPortPg = portsLocalNet().nPortPostgres();
+            for (String strRole : LocalNetPorts.LST_ROLE) {
+                String strDb = LocalNetSpec.strDbParticipant(strRole);
+                if (strDb != null) {
+                    mapOut.put(strRole, new PostgresCoordinates(LocalNetRunner.STR_HOST, nPortPg,
+                            strDb, LocalNetSpec.STR_DB_USER, LocalNetSpec.STR_DB_PASSWORD));
+                }
+            }
+            return mapOut;
+        }
+        PostgresCoordinates coord = LedgerProbe.coordinatesParticipant(service);
+        if (coord != null)
+            mapOut.put("participant", coord);
+        else
+            logLedger.append("nothing to follow - this participant keeps no database");
+        return mapOut;
+    }
+
+
     private LocalNetPorts portsLocalNet() {
         LocalNetRunner runnerHere = runner;
         if (runnerHere != null && runnerHere.state() != StackService_i.State.STOPPED)
@@ -4319,6 +4859,9 @@ public final class SandboxWindow extends JFrame {
         lstSnapshot.setEnabled(controls.flagSnapshots());
         form.setInputEnabled(controls.flagInput());
         paneDars.setInputEnabled(controls.flagInput());
+        // WHAT A RUNNING STACK IS BUILT ON is locked on the Settings tab by
+        // the same rule that locks the form - his instruction, 2026-10-04.
+        paneSettings.setLocked(!controls.flagInput());
         paneSettings.setAviationEnabled(!flagAviationBusy && flagAviationOffered());
         // AND PHARMA'S, by the same rule: off while one is being built, and
         // off once the story is on a ledger - a second run would allocate
@@ -4338,7 +4881,9 @@ public final class SandboxWindow extends JFrame {
      */
     private void enterState(SandboxService.State state) {
         this.stateNow = state;
+        cntUsersEpoch.incrementAndGet();
         setStateChip(state);
+        ledgerWatch.follow(state == SandboxService.State.RUNNING ? mapLedgerDatabases() : Map.of());
         Consumer<SandboxService.State> sinkHere = sinkState;
         if (sinkHere != null)
             sinkHere.accept(state);

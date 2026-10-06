@@ -29,6 +29,30 @@ import java.util.Map;
  * calls are same-origin; upstream leaves them cross-origin against a backend
  * whose CORS behaviour this project has not measured.
  *
+ * <h2>A PAGE PER NODE HAS THE NODE IN ITS NAME - his decision, 2026-10-04</h2>
+ *
+ * Upstream tells one node's wallet from another's by port alone:
+ * `wallet.localhost:31000` and `wallet.localhost:31010` read the same, and
+ * because a browser keys cookies by host and NOT by port, the three wallets
+ * share one cookie jar. The wallet and the name service - the two pages every
+ * node has its own copy of - are now served as `&lt;role&gt;.wallet.localhost`
+ * and `&lt;role&gt;.ans.localhost` on the same per-role port, and those are the
+ * names {@link #lstPage} lists. `sv.localhost` and `scan.localhost` already
+ * name one thing each and are unchanged.
+ *
+ * THE UPSTREAM NAMES STILL ANSWER. Each is a second vhost with
+ * {@link Vhost#flagAlias()} set and a config.js written for ITS OWN origin, so
+ * a page opened under the old name calls back to the old name and is still
+ * same-origin; it is left out of {@link #lstPage} and served all the same.
+ * {@link #lstPageAlias} hands them to whatever must know every origin - the
+ * provider's redirect list.
+ *
+ * MEASURED 2026-10-04 for Chromium 141 on Linux: `app-provider.wallet.localhost`
+ * loaded a page from 127.0.0.1 while the OS resolver (`getent hosts`) knew
+ * neither that name nor `wallet.localhost` - the browser answers both itself,
+ * as RFC 6761 reserves every name under `.localhost`. NOT MEASURED for
+ * Firefox or Edge.
+ *
  * THE CONFIG IS GENERATED, NOT TEMPLATED. `index.html` loads `/config.js` as a
  * plain script - the shipped file says in its own comment that it is meant to
  * be replaced by the operator - so the server answers that one path itself and
@@ -98,7 +122,26 @@ public final class LocalNetUi {
      *        conf/nginx/swagger-ui/ are added
      */
     public record Vhost(String strHost, String strApp, String strConfigJs, List<Route> lstRoute,
-            boolean flagCors) {
+            boolean flagCors, boolean flagAlias) {
+
+        /**
+         * A vhost under its own name - not an alias.
+         */
+        public Vhost(String strHost, String strApp, String strConfigJs, List<Route> lstRoute,
+                boolean flagCors) {
+            this(strHost, strApp, strConfigJs, lstRoute, flagCors, false);
+        }
+
+
+        /**
+         * @param strHostAlias the other name
+         * @param strConfigJsAlias its config.js, for its own origin
+         * @return this vhost answering under another name, left off the
+         *         page list
+         */
+        Vhost alias(String strHostAlias, String strConfigJsAlias) {
+            return new Vhost(strHostAlias, strApp, strConfigJsAlias, lstRoute, flagCors, true);
+        }
     }
 
 
@@ -117,17 +160,45 @@ public final class LocalNetUi {
      * @param strTitle the page's own name, as it calls itself
      * @param strLogin the name to type at its login box, or null when it has
      *        none
+     * @param strRole the node it belongs to - sv, app-provider or app-user -
+     *        for the Web tab's Node column
      */
-    public record Page(String strUrl, String strTitle, String strLogin) {
+    public record Page(String strUrl, String strTitle, String strLogin, String strRole) {
+    }
+
+
+    /** The roles in site order. */
+    private static final List<String> LST_ROLE = List.of("sv", "app-provider", "app-user");
+
+    /** The roles with a name service of their own - sv has none. */
+    private static final List<String> LST_ROLE_ANS = List.of("app-provider", "app-user");
+
+
+    /**
+     * @param strRole sv, app-provider or app-user
+     * @param strHost a per-role page's upstream name
+     * @return the name that says whose page it is, `app-provider.wallet.localhost`
+     */
+    public static String strHostRole(String strRole, String strHost) {
+        return strRole + "." + strHost;
     }
 
 
     /**
-     * @return every hostname a browser has to be able to resolve
+     * @return every hostname a browser has to be able to resolve, the
+     *         role-named ones first
      */
     public static List<String> lstHostName() {
-        return List.of(STR_HOST_WALLET, STR_HOST_ANS, STR_HOST_SV, STR_HOST_SCAN,
-                STR_HOST_CANTON, STR_HOST_JSON);
+        List<String> lstOut = new ArrayList<>();
+        for (String strRole : LST_ROLE) {
+            lstOut.add(strHostRole(strRole, STR_HOST_WALLET));
+        }
+        for (String strRole : LST_ROLE_ANS) {
+            lstOut.add(strHostRole(strRole, STR_HOST_ANS));
+        }
+        lstOut.addAll(List.of(STR_HOST_WALLET, STR_HOST_ANS, STR_HOST_SV, STR_HOST_SCAN,
+                STR_HOST_CANTON, STR_HOST_JSON));
+        return lstOut;
     }
 
 
@@ -217,9 +288,12 @@ public final class LocalNetUi {
                 List.of(new Route("/api/scan", strUpScan),
                         new Route("/registry", strUpScan)),
                 false));
-        lstVhost.add(vhostWallet(nPort, strUpValidator, strUpScan, strAudience, auth));
+        lstVhost.add(vhostWallet("sv", nPort, strUpValidator, strUpScan, strAudience, auth,
+                false));
         lstVhost.add(new Vhost(STR_HOST_CANTON, null, null,
                 List.of(new Route("/docs/openapi", strUpJson), new Route("/v2", strUpJson)),
+                true));
+        lstVhost.add(vhostWallet("sv", nPort, strUpValidator, strUpScan, strAudience, auth,
                 true));
         return new Site("sv", nPort, strLogin, lstVhost);
     }
@@ -240,27 +314,45 @@ public final class LocalNetUi {
         String strUpJson = strUp(strHost, ports.nPortJson(strRole));
         String strUpScan = strUp(strHost, ports.nPortScan());
 
-        List<Vhost> lstVhost = new ArrayList<>();
-        lstVhost.add(vhostWallet(nPort, strUpValidator, strUpScan, strAudience, auth));
-        lstVhost.add(new Vhost(STR_HOST_ANS, "ans",
-                strConfigAns(strOrigin(STR_HOST_ANS, nPort), strOrigin(STR_HOST_WALLET, nPort),
+        // THE ROLE-NAMED WALLET FIRST: it is what an unmatched Host reaches.
+        String strHostWallet = strHostRole(strRole, STR_HOST_WALLET);
+        String strHostAns = strHostRole(strRole, STR_HOST_ANS);
+        Vhost vhostAns = new Vhost(strHostAns, "ans",
+                strConfigAns(strOrigin(strHostAns, nPort), strOrigin(strHostWallet, nPort),
                         strAudience, auth),
-                List.of(new Route("/api/validator", strUpValidator)), false));
+                List.of(new Route("/api/validator", strUpValidator)), false);
+
+        List<Vhost> lstVhost = new ArrayList<>();
+        lstVhost.add(vhostWallet(strRole, nPort, strUpValidator, strUpScan, strAudience, auth,
+                false));
+        lstVhost.add(vhostAns);
         lstVhost.add(new Vhost(STR_HOST_CANTON, null, null,
                 List.of(new Route("/", strUpJson)), true));
         lstVhost.add(new Vhost(STR_HOST_JSON, null, null,
                 List.of(new Route("/", strUpJson)), true));
+        // THE UPSTREAM NAMES, each configured for its own origin - the class
+        // comment says why.
+        lstVhost.add(vhostWallet(strRole, nPort, strUpValidator, strUpScan, strAudience, auth,
+                true));
+        lstVhost.add(vhostAns.alias(STR_HOST_ANS, strConfigAns(strOrigin(STR_HOST_ANS, nPort),
+                strOrigin(STR_HOST_WALLET, nPort), strAudience, auth)));
         return new Site(strRole, nPort, strLogin, lstVhost);
     }
 
 
-    private static Vhost vhostWallet(int nPort, String strUpValidator, String strUpScan,
-            String strAudience, LocalNetAuth auth) {
-        return new Vhost(STR_HOST_WALLET, "wallet",
-                strConfigWallet(strOrigin(STR_HOST_WALLET, nPort), strAudience, auth),
+    /**
+     * @param strRole whose wallet
+     * @param flagAlias true for the upstream name `wallet.localhost`, false for
+     *        `&lt;role&gt;.wallet.localhost`
+     */
+    private static Vhost vhostWallet(String strRole, int nPort, String strUpValidator,
+            String strUpScan, String strAudience, LocalNetAuth auth, boolean flagAlias) {
+        String strHost = flagAlias ? STR_HOST_WALLET : strHostRole(strRole, STR_HOST_WALLET);
+        return new Vhost(strHost, "wallet",
+                strConfigWallet(strOrigin(strHost, nPort), strAudience, auth),
                 List.of(new Route("/api/validator", strUpValidator),
                         new Route("/api/scan", strUpScan)),
-                false);
+                false, flagAlias);
     }
 
 
@@ -509,14 +601,32 @@ public final class LocalNetUi {
      * @return every page a browser can open
      */
     public static List<Page> lstPage(List<Site> lstSite) {
+        return lstPage(lstSite, false);
+    }
+
+
+    /**
+     * The upstream names a page also answers under - not shown, but a sign-in
+     * may return to any of them.
+     *
+     * @param lstSite what {@link #lstSite} built
+     * @return one page per alias vhost
+     */
+    public static List<Page> lstPageAlias(List<Site> lstSite) {
+        return lstPage(lstSite, true);
+    }
+
+
+    private static List<Page> lstPage(List<Site> lstSite, boolean flagAlias) {
         List<Page> lstPage = new ArrayList<>();
         for (Site site : lstSite) {
             for (Vhost vhost : site.lstVhost()) {
-                if (vhost.strApp() == null)
+                if (vhost.strApp() == null || vhost.flagAlias() != flagAlias)
                     continue;
                 lstPage.add(new Page(strOrigin(vhost.strHost(), site.nPort()),
                         strTitle(vhost.strApp(), site.strRole()),
-                        "scan".equals(vhost.strApp()) ? null : site.strLogin()));
+                        "scan".equals(vhost.strApp()) ? null : site.strLogin(),
+                        site.strRole()));
             }
         }
         return lstPage;

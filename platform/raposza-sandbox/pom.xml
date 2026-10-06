@@ -25,7 +25,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.4.1</version>
+        <version>0.5.0</version>
     </parent>
 
     <artifactId>raposza-sandbox</artifactId>
@@ -70,16 +70,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-        </dependency>
-        <!-- TEST SCOPE, and it stays that way. The sandbox does not depend
-             on an identity provider - it is handed a JWKS url and does not
-             care what serves it. The live auth suite needs something to
-             serve one, which is what this module is. -->
-        <dependency>
-            <groupId>com.raposza</groupId>
-            <artifactId>raposza-test-idp</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

@@ -98,7 +98,7 @@ class PqsLogTest {
         assertNull(log.strFor(null));
         // THE COMMAND LINE TOO. It carries the client secret's placeholder and
         // a token endpoint with the audience in it, and it is in the log file.
-        assertNull(log.strFor("$ java -jar /home/bentzn/.pqs/line/3.5/scribe.jar pipeline"));
+        assertNull(log.strFor("$ java -jar /home/user/.pqs/line/3.5/scribe.jar pipeline"));
     }
 
 

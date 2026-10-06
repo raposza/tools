@@ -67,8 +67,18 @@ public final class DiscoveryServer {
      */
     private static final int N_BACKLOG = 0;
 
-    /** How long {@link #stop} lets an in-flight exchange finish. */
-    private static final int N_SECONDS_STOP = 1;
+    /**
+     * How long {@link #stop} lets an in-flight exchange finish: NOT AT ALL.
+     *
+     * MEASURED 2026-10-03. Closing the window held the event thread 2067 ms,
+     * sampled in this stop and in {@code RawarServer}'s, one second each.
+     * {@code HttpServer.stop(1)} waits the whole second when an exchange is in
+     * flight or half-read and {@code stop(0)} returns at once - JDK 21.0.12,
+     * one socket holding a partial request: 1000 ms against 1 ms. Every
+     * caller is a close, so what an unfinished exchange loses is an answer
+     * nobody is left to read.
+     */
+    private static final int N_SECONDS_STOP = 0;
 
     private transient HttpServer server;
 
