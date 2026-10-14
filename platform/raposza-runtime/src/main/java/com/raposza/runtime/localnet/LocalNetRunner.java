@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.runtime.localnet;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
@@ -27,6 +29,8 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.jar.JarFile;
+import java.util.jar.Manifest;
 import java.util.stream.Stream;
 
 import com.raposza.runtime.db.SandboxPostgres;
@@ -52,6 +56,18 @@ import com.raposza.runtime.lifecycle.StackService_i;
  * of them is a detector. A TCP connect and the readyz endpoints in
  * docker/splice/health-check.sh are, because they answer only once
  * initialisation has actually happened.
+ *
+ * <h2>Windows - `todo.md` W-14</h2>
+ *
+ * Five things differ there, each the one LocalNetND came up on Windows with,
+ * D-601 to D-607: Splice is started as the JVM its shell script ends in
+ * ({@link SpliceLaunch}); the staging root is written
+ * into HOCON with forward slashes ({@link LocalNetStager}); the connection
+ * check PostgreSQL for Windows refuses is turned off where configuration
+ * reaches it and answered by a data source where it does not
+ * ({@link #useDataSource}); the network is given longer to answer; and the run
+ * directory's removal is retried while handles close. Linux runs exactly as
+ * before.
  *
  * Author Claude/bentzn
  */
@@ -98,6 +114,33 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
 
     private static final Duration TIMEOUT_GATE = Duration.ofMinutes(8);
 
+    /**
+     * WINDOWS WAITS LONGER - `todo.md` W-14. 20 minutes is the gate the
+     * Windows runs of D-601 to D-607 were taken under. A process that exits
+     * still ends the wait at once, so the longer figure costs nothing on a
+     * start that fails.
+     */
+    private static final Duration TIMEOUT_GATE_WINDOWS = Duration.ofMinutes(20);
+
+    /**
+     * What PostgreSQL for Windows accepts for `client_connection_check_interval`
+     * - see {@link #mapNoConnectionCheck}.
+     */
+    private static final String STR_CCCI_OFF = "0s";
+
+    /** Every canton participant, which the bundle names for the roles. */
+    private static final String[] ARR_PARTICIPANT = { "sv", "app-provider", "app-user" };
+
+    /** Every canton node, as the tree it sits under and its name. */
+    private static final String[][] ARR_NODE_TREE = {
+            { "participants", "sv" },
+            { "participants", "app-provider" },
+            { "participants", "app-user" },
+            { "sequencers", "sequencer" },
+            { "sequencers", "app-sequencer" },
+            { "mediators", "mediator" },
+            { "mediators", "app-mediator" } };
+
     /** Not an exit status. See main. */
     private static final int N_RC_PARKED = -1;
 
@@ -114,6 +157,18 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
 
     /** Lays a cluster down between the wipe and PostgreSQL, or null. */
     private Consumer<Path> runClusterPrepare;
+
+    /** The splice namespace's staged conf, kept for a restart - {@link #flagRestartSplice}. */
+    private Path fileConfSplice;
+
+    /** How often the splice namespace has been started again in this start. */
+    private int cntSpliceRestart;
+
+    /** Put ahead of both jars when set - {@link #useDataSource}. */
+    private Path dirDataSource;
+
+    /** What every storage block names when {@link #dirDataSource} is set. */
+    private String strDataSourceClass;
 
     /** Every port this stack binds, and the rule that assigned them. */
     private final LocalNetPorts ports;
@@ -343,8 +398,10 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         if (!Files.isDirectory(dirBundle)) {
             dirBundle = SpliceInstallations.dirBundle(strBundle);
         }
-        if (!Files.isExecutable(dirBundle.resolve("bin/splice-node")))
-            throw new StartException(2, "NOT FOUND: " + dirBundle.resolve("bin/splice-node"));
+        // WHAT THIS MACHINE RUNS, NOT ALWAYS THE SCRIPT - `todo.md` W-14. On
+        // Windows the shell script cannot be started and the jar is what runs.
+        if (!SpliceLaunch.isInstalled(dirBundle))
+            throw new StartException(2, "NOT FOUND: " + SpliceLaunch.fileRequired(dirBundle));
         // A BUNDLE WHOSE OWN EXECUTABLE DOES NOT START IS REFUSED HERE, in two
         // seconds and once per version, rather than as eight DOWN gates and a
         // FATAL - Splice 0.8.2 on 2026-09-23. SpliceCheck says how it is told.
@@ -490,6 +547,7 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
 
         launch(STR_NS_CANTON, fileCanton);
         launch(STR_NS_SPLICE, fileSplice);
+        this.fileConfSplice = fileSplice;
 
         boolean flagUp = awaitGates();
         report(flagUp);
@@ -622,6 +680,69 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
      */
     public void useClusterPrepare(Consumer<Path> runNew) {
         this.runClusterPrepare = runNew;
+    }
+
+
+    /**
+     * THE DATA SOURCE BOTH NAMESPACES USE, WINDOWS - `todo.md` W-14.
+     *
+     * PostgreSQL for Windows refuses any nonzero
+     * `client_connection_check_interval`, and every Canton and Splice node
+     * sends 5s on its migration-lock connection from a constructor default no
+     * configuration path reaches - D-602 to D-606. The answer is a DataSource
+     * that rewrites the value on its way out, named in `_storage`, which every
+     * node in either namespace substitutes, and put on both JVMs' classpaths
+     * ahead of the jar. This module cannot name that class itself - it lives
+     * in `raposza-canton`, which depends on this one - so the caller places it
+     * and hands over where it is.
+     *
+     * OUTSIDE THE RUN DIRECTORY. The start wipes that directory first, so a
+     * class placed there beforehand would be gone by the launch.
+     *
+     * A Canton jar that declares no main class cannot be launched in the form
+     * that carries a classpath, and then neither namespace is told to use the
+     * class - the rule the Windows runs of D-606 and D-607 were taken under.
+     *
+     * @param dirClasspath the directory holding the class files, or null for
+     *        the stock driver everywhere
+     * @param strClass the DataSource class every storage block names, or null
+     */
+    public void useDataSource(Path dirClasspath, String strClass) {
+        if (dirClasspath == null || strClass == null || strClass.isBlank()) {
+            this.dirDataSource = null;
+            this.strDataSourceClass = null;
+            return;
+        }
+        this.dirDataSource = dirClasspath.toAbsolutePath().normalize();
+        this.strDataSourceClass = strClass;
+    }
+
+
+    /**
+     * @return whether both namespaces run on the data source of
+     *         {@link #useDataSource} - set, and a Canton main class to launch
+     *         under it
+     */
+    private boolean flagDataSource() {
+        return dirDataSource != null && strMainClass(image.fileJar()) != null;
+    }
+
+
+    /**
+     * @param fileJar the stock Canton jar
+     * @return its manifest's Main-Class, or null when it declares none or
+     *         cannot be read
+     */
+    private static String strMainClass(Path fileJar) {
+        if (fileJar == null)
+            return null;
+        try (JarFile jar = new JarFile(fileJar.toFile())) {
+            Manifest manifest = jar.getManifest();
+            return manifest == null ? null : manifest.getMainAttributes().getValue("Main-Class");
+        }
+        catch (IOException ex) {
+            return null;
+        }
     }
 
 
@@ -1215,10 +1336,21 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         List<String> lstCmd = new ArrayList<>();
         List<Path> lstConf = new ArrayList<>();
         lstConf.add(fileConf);
+        boolean flagDataSourceHere = flagDataSource();
         if (STR_NS_CANTON.equals(strNamespace)) {
             lstCmd.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
-            lstCmd.add("-jar");
-            lstCmd.add(image.fileJar().toString());
+            if (flagDataSourceHere) {
+                // `-jar` IGNORES `-cp`, so the data source cannot reach Canton
+                // that way - D-606. The main class is read off the jar's own
+                // manifest rather than named.
+                lstCmd.add("-cp");
+                lstCmd.add(dirDataSource + File.pathSeparator + image.fileJar());
+                lstCmd.add(strMainClass(image.fileJar()));
+            }
+            else {
+                lstCmd.add("-jar");
+                lstCmd.add(image.fileJar().toString());
+            }
             lstCmd.add("daemon");
             lstCmd.add("--no-tty");
             lstCmd.add("-c");
@@ -1231,7 +1363,10 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
             }
         }
         else {
-            lstCmd.add(dirBundle.resolve("bin/splice-node").toString());
+            // THE SCRIPT ON LINUX, ITS JVM ON WINDOWS - `todo.md` W-14,
+            // SpliceLaunch says why.
+            lstCmd.addAll(SpliceLaunch.lstCommand(dirBundle,
+                    flagDataSourceHere ? List.of(dirDataSource) : List.of()));
             lstCmd.add("daemon");
             lstCmd.add("-c");
             lstCmd.add(fileConf.toString());
@@ -1256,6 +1391,10 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         // the vendor's UI ports and addresses back.
         bld.environment().putAll(ports.mapEnvOverride(STR_HOST));
         bld.environment().putAll(auth.mapEnvOverride());
+        // LOOPBACK NEVER GOES THROUGH A PROXY - `todo.md` W-14, measured
+        // 2026-10-13. See strToolOptions.
+        bld.environment().put(STR_ENV_TOOL_OPTIONS,
+                strToolOptions(bld.environment().get(STR_ENV_TOOL_OPTIONS)));
         bld.redirectErrorStream(true);
         bld.redirectOutput(dirRun.resolve(strNamespace + ".out").toFile());
         // UNDER THE MONITOR close() HOLDS, and only while this runner is open
@@ -1290,6 +1429,14 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         mapConf.put("_storage.config.properties.portNumber",
                 String.valueOf(ports.nPortPostgres()));
         mapConf.putAll(LocalNetSpec.mapDatabases(strNamespace));
+        // WINDOWS ONLY, BOTH AS LOCALNETND CAME UP ON WINDOWS WITH THEM -
+        // `todo.md` W-14, D-602 to D-607. ONE KEY for the data source: every
+        // node and both reference driver stores substitute `_storage`, in
+        // either namespace.
+        if (flagDataSource())
+            mapConf.put("_storage.config.dataSourceClass", strDataSourceClass);
+        if (STR_NS_CANTON.equals(strNamespace) && SpliceLaunch.flagWindows())
+            mapConf.putAll(mapNoConnectionCheck());
         if (STR_NS_SPLICE.equals(strNamespace))
             mapConf.putAll(LocalNetSpec.mapHostOverrides(STR_HOST));
         // AFTER the host overrides, so the sequencer's advertised url -
@@ -1297,6 +1444,42 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         // bundle's.
         mapConf.putAll(ports.mapOverride(strNamespace, STR_HOST));
         return mapConf;
+    }
+
+
+    /**
+     * WINDOWS ONLY - stops Canton asking the postmaster for a connection check
+     * it cannot perform, `todo.md` W-14.
+     *
+     * PostgreSQL built for Windows has no POLLRDHUP, refuses any nonzero
+     * `client_connection_check_interval` and answers the SET with an ERROR -
+     * D-602. The ledger API's datasource and the indexer's are configuration
+     * and are reached here; the migration locks are not, and the data source
+     * of {@link #useDataSource} answers those - D-605, D-606. These are the
+     * thirteen keys LocalNetND came up on Windows with - D-607 - carried as
+     * they were rather than trimmed to what is known to be read.
+     *
+     * 0s rather than null: Canton reads the field as a non-negative finite
+     * duration and fails the whole configuration on an explicit null.
+     *
+     * @return the -C key/value pairs
+     */
+    private static Map<String, String> mapNoConnectionCheck() {
+        Map<String, String> mapOff = new LinkedHashMap<>();
+        for (String strNode : ARR_PARTICIPANT) {
+            mapOff.put("canton.participants." + strNode
+                    + ".ledger-api.postgres-data-source.client-connection-check-interval",
+                    STR_CCCI_OFF);
+            mapOff.put("canton.participants." + strNode
+                    + ".parameters.ledger-api-server.indexer.postgres-data-source"
+                    + ".client-connection-check-interval", STR_CCCI_OFF);
+        }
+        for (String[] arrNode : ARR_NODE_TREE) {
+            mapOff.put("canton." + arrNode[0] + "." + arrNode[1]
+                    + ".replication.connection-pool.connection"
+                    + ".client-connection-check-interval", STR_CCCI_OFF);
+        }
+        return mapOff;
     }
 
 
@@ -1313,8 +1496,61 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
      */
     private static final String STR_WAIT_NETWORK = "Waiting for the network";
 
+    /**
+     * The vendor's own words when a validator gives up on scan - D-687, D-883.
+     * Read off `splice.out`, which carries Splice's WARN and ERROR lines.
+     */
+    static final String STR_SCAN_NOT_SERVING = "Getting BFT scan connection failed";
 
-    private boolean awaitGates() throws InterruptedException {
+    /** Read by every JVM at start, whatever launched it - the JVM's own rule. */
+    static final String STR_ENV_TOOL_OPTIONS = "JAVA_TOOL_OPTIONS";
+
+    /** The property Splice's HTTP client and the JDK's both read for bypasses. */
+    static final String STR_PROP_NON_PROXY = "-Dhttp.nonProxyHosts=";
+
+    /**
+     * The JDK's own default bypass list. Splice matches the raw host string
+     * with `*` as a wildcard, so `127.*` covers `127.0.0.1` there too.
+     */
+    static final String STR_NON_PROXY_LOOPBACK = "localhost|127.*|[::1]";
+
+
+    /**
+     * A MACHINE WITH A PROXY MUST NOT PROXY LOOPBACK - `todo.md` W-14,
+     * measured 2026-10-13 on a Windows guest whose JVMs all carry
+     * `-Dhttp.proxyHost` and no `http.nonProxyHosts` in `JAVA_TOOL_OPTIONS`.
+     * Every validator's call to scan at `127.0.0.1:30050` arrived at the proxy
+     * as `CONNECT 127.0.0.1:30050` - its access log, three per Splice start -
+     * so the validators never reached scan while the runner's own probe did,
+     * and every start ended in "Getting BFT scan connection failed".
+     *
+     * The vendor states why: the HTTP client of the Splice apps honours the
+     * proxy and `http.nonProxyHosts`, matched on the raw host string, and an
+     * empty value bypasses nothing - Splice's validator documentation,
+     * "Bypassing the proxy for specific hosts". The JDK applies its own
+     * loopback default when the property is unset; Splice does not.
+     *
+     * So both namespaces are given the JDK's default list explicitly, through
+     * `JAVA_TOOL_OPTIONS`, which every JVM reads whether it is started
+     * directly or through the bundle's shell script. A list the machine
+     * already sets is the operator's and is left exactly as it is.
+     *
+     * @param strExisting what the environment already carries, or null
+     * @return the value to start both namespaces with
+     */
+    static String strToolOptions(String strExisting) {
+        String strHere = strExisting == null ? "" : strExisting.trim();
+        if (strHere.contains(STR_PROP_NON_PROXY))
+            return strHere;
+        String strAdd = STR_PROP_NON_PROXY + STR_NON_PROXY_LOOPBACK;
+        return strHere.isEmpty() ? strAdd : strHere + " " + strAdd;
+    }
+
+    /** As many restarts as `ready.py` waits through on BaseNet - D-883. */
+    private static final int N_SPLICE_RESTART_MAX = 6;
+
+
+    private boolean awaitGates() throws InterruptedException, IOException {
         Map<String, String> mapTarget = mapGates();
         Map<String, Boolean> mapGate = new LinkedHashMap<>();
         for (String strLabel : mapTarget.keySet()) {
@@ -1324,7 +1560,8 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
         // The count is what changes; the line is replaced, not repeated.
         out(STR_WAIT_NETWORK);
 
-        Instant instEnd = Instant.now().plus(TIMEOUT_GATE);
+        Instant instEnd = Instant.now().plus(SpliceLaunch.flagWindows()
+                ? TIMEOUT_GATE_WINDOWS : TIMEOUT_GATE);
         int cntUp = 0;
         while (Instant.now().isBefore(instEnd)) {
             boolean flagAll = true;
@@ -1342,8 +1579,10 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
             }
             if (flagAll)
                 return true;
-            if (!alive())
+            if (!alive() && !flagRestartSplice()) {
+                out("  a process exited early");
                 break;
+            }
             Thread.sleep(5000L);
         }
 
@@ -1401,12 +1640,65 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
     }
 
 
+    /**
+     * SPLICE IS STARTED AGAIN WHEN A VALIDATOR GAVE UP ON SCAN - `todo.md`
+     * W-14, measured on Windows 2026-10-13 with Splice 0.9.1.
+     *
+     * A validator that cannot reach scan while scan is still being founded
+     * fails its initialization with "Getting BFT scan connection failed" -
+     * D-687, the vendor's cold-founding start order. On Kubernetes only that
+     * pod restarts and the next start finds scan serving - D-883. Here every
+     * Splice app runs in ONE JVM, so the same failure ends the whole
+     * namespace, and on a slower founding it did: the validators gave up
+     * at 02:53:06, under two minutes in, while the SV was still initializing
+     * its sequencer. So this
+     * does what Kubernetes does: the splice namespace alone is started again,
+     * on the same staged conf and the same databases, while Canton keeps
+     * running. Any other exit still ends the start.
+     *
+     * @return true when the splice namespace was started again
+     * @throws IOException when it cannot be started
+     */
+    private boolean flagRestartSplice() throws IOException {
+        Process procCanton = mapProcess.get(STR_NS_CANTON);
+        Process procSplice = mapProcess.get(STR_NS_SPLICE);
+        if (procCanton == null || !procCanton.isAlive() || procSplice == null
+                || procSplice.isAlive() || fileConfSplice == null
+                || cntSpliceRestart >= N_SPLICE_RESTART_MAX)
+            return false;
+        Path fileOut = dirRun.resolve(STR_NS_SPLICE + ".out");
+        String strOut;
+        try {
+            strOut = Files.isRegularFile(fileOut)
+                    ? Files.readString(fileOut, StandardCharsets.ISO_8859_1) : "";
+        }
+        catch (IOException ex) {
+            return false;
+        }
+        if (!strOut.contains(STR_SCAN_NOT_SERVING))
+            return false;
+
+        cntSpliceRestart++;
+        synchronized (this) {
+            lstProcess.remove(procSplice);
+            mapProcess.remove(STR_NS_SPLICE);
+        }
+        out("Splice stopped because scan was not serving yet; starting it again ("
+                + cntSpliceRestart + " of " + N_SPLICE_RESTART_MAX + ")");
+        launch(STR_NS_SPLICE, fileConfSplice);
+        out(STR_WAIT_NETWORK);
+        return true;
+    }
+
+
+    /**
+     * @return whether every launched process is still running; says nothing,
+     *         because an exit the start recovers from is not worth a line
+     */
     private boolean alive() {
         for (Process process : lstProcess) {
-            if (!process.isAlive()) {
-                out("  a process exited early");
+            if (!process.isAlive())
                 return false;
-            }
         }
         return true;
     }
@@ -1434,13 +1726,41 @@ public final class LocalNetRunner implements AutoCloseable, StackService_i {
     }
 
 
-    private static void deleteTree(Path dirGone) throws IOException {
-        try (Stream<Path> strm = Files.walk(dirGone)) {
-            for (Path pathGone : strm.sorted((a, b) -> b.getNameCount() - a.getNameCount())
-                    .toList()) {
-                Files.deleteIfExists(pathGone);
+    /**
+     * RETRIED - `todo.md` W-14. Windows refuses a delete while any handle is
+     * still open, and a postmaster that has just been stopped closes its files
+     * a moment after its process exits; the Windows runs of D-607 and D-608
+     * retried for that reason. On Linux the first pass succeeds and nothing
+     * changes.
+     *
+     * @param dirGone the tree to remove
+     * @throws IOException the last refusal, after five tries a second apart
+     * @throws InterruptedException when the wait between tries is interrupted
+     */
+    private static void deleteTree(Path dirGone) throws IOException, InterruptedException {
+        IOException exLast = null;
+        for (int cntTry = 0; cntTry < 5; cntTry++) {
+            try {
+                try (Stream<Path> strm = Files.walk(dirGone)) {
+                    for (Path pathGone : strm.sorted((a, b) -> b.getNameCount() - a.getNameCount())
+                            .toList()) {
+                        Files.deleteIfExists(pathGone);
+                    }
+                }
+                if (!Files.exists(dirGone))
+                    return;
             }
+            catch (IOException ex) {
+                exLast = ex;
+            }
+            catch (UncheckedIOException ex) {
+                exLast = ex.getCause();
+            }
+            Thread.sleep(1000L);
         }
+        if (exLast != null)
+            throw exLast;
+        throw new IOException("could not delete " + dirGone);
     }
 
 

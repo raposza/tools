@@ -107,6 +107,9 @@ class AviationScriptTest {
         // NO `*`. It is not a user and the picker no longer offers it.
         assertTrue(strOut.indexOf(" or *") < 0, strOut);
         assertTrue(strOut.contains("-- User: participant_admin\n"), strOut);
+        // THE ADMINISTRATIVE READS NAME participant_admin ALONE - superuser
+        // has no admin rights, his rule of 2026-10-13.
+        assertTrue(strOut.indexOf("participant_admin or superuser") < 0, strOut);
         assertTrue(strOut.contains("ALLOCATE PARTY"), strOut);
         assertTrue(strOut.contains("CREATE USER"), strOut);
         // NOTHING OF THE DAIRY SURVIVES.

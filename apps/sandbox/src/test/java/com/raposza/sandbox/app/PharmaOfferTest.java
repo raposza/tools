@@ -62,6 +62,23 @@ class PharmaOfferTest {
 
 
     /**
+     * NO SPLICE, NO OFFER, BUILT OR NOT - his instruction of 2026-10-13,
+     * `todo.md` A-75. The setting still answers first.
+     */
+    @Test
+    void noSpliceIsNotAskedEvenWithTheDarBuilt() {
+        assertEquals(PharmaOffer.STR_WHY_NO_SPLICE,
+                PharmaOffer.strWhyNot(true, false, "3.5.7", false));
+        assertEquals(PharmaOffer.STR_WHY_NO_SPLICE,
+                PharmaOffer.strWhyNot(true, false, null, true));
+        assertFalse(PharmaOffer.flagOffer(true, false, "3.5.7", true));
+        assertEquals(PharmaOffer.STR_WHY_SETTING,
+                PharmaOffer.strWhyNot(false, false, null, true));
+        assertTrue(PharmaOffer.flagOffer(true, true, "3.5.7", false));
+    }
+
+
+    /**
      * The toolchain rule is Aviation's, called rather than copied - so a 2.x
      * Canton names itself and a 3.x one is looked up in the bundle map.
      */

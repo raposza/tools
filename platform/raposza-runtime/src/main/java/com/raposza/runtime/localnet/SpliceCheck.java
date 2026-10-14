@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -30,8 +31,9 @@ import java.util.stream.Stream;
  * <h2>What is run, and why that and nothing cheaper</h2>
  *
  * `bin/splice-node daemon -c &lt;empty file&gt; --log-file-name &lt;file&gt;`,
- * in a temporary directory that is removed afterwards. MEASURED at his
- * console, 2026-09-23, on both bundles:
+ * in a temporary directory that is removed afterwards - on Windows the same
+ * arguments to the JVM the script would have started, {@link SpliceLaunch},
+ * `todo.md` W-14. MEASURED at his console, 2026-09-23, on both bundles:
  *
  * <pre>
  *   0.8.1  exit 1    2154 ms  log file written   GENERIC_CONFIG_ERROR - Key not found: 'canton'
@@ -125,9 +127,13 @@ public final class SpliceCheck {
      * @return null when the bundle starts, else why not
      */
     static String strWhyNotRun(Path dirBundle) {
-        Path fileLauncher = dirBundle.resolve("bin").resolve(SpliceInstallations.STR_BUNDLE);
-        if (!Files.isExecutable(fileLauncher))
-            return "there is no executable " + fileLauncher;
+        // THE LAUNCHER THIS MACHINE CAN RUN - `todo.md` W-14. The bundle's
+        // only launcher is a shell script, so on Windows the JVM it ends in is
+        // started directly; SpliceLaunch says how. The verdict is read the
+        // same way on both, because it is read off the log and the vendor's
+        // own line, not off what started the process.
+        if (!SpliceLaunch.isInstalled(dirBundle))
+            return "there is no usable " + SpliceLaunch.fileRequired(dirBundle);
 
         Path dirTmp = null;
         try {
@@ -137,8 +143,10 @@ public final class SpliceCheck {
             Path fileLog = dirTmp.resolve("check.log");
             Path fileOut = dirTmp.resolve("out.txt");
 
-            ProcessBuilder bld = new ProcessBuilder(List.of(fileLauncher.toString(), "daemon",
-                    "-c", fileConf.toString(), "--log-file-name", fileLog.toString()));
+            List<String> lstCmd = new ArrayList<>(SpliceLaunch.lstCommand(dirBundle, List.of()));
+            lstCmd.addAll(List.of("daemon", "-c", fileConf.toString(), "--log-file-name",
+                    fileLog.toString()));
+            ProcessBuilder bld = new ProcessBuilder(lstCmd);
             bld.directory(dirTmp.toFile());
             bld.redirectErrorStream(true);
             bld.redirectOutput(fileOut.toFile());

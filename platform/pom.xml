@@ -11,7 +11,7 @@
 
     <groupId>com.raposza</groupId>
     <artifactId>raposza-platform</artifactId>
-    <version>0.5.0</version>
+    <version>0.6.0</version>
     <packaging>pom</packaging>
     <name>raposza-platform</name>
     <description>Explore and act on a Canton participant node</description>
@@ -119,8 +119,7 @@
              Testcontainers because the sandbox runs as ordinary OS
              processes and must not require a container runtime; this
              unpacks a real server binary and runs it directly.
-             Versions NOT verified as latest; bump deliberately. They
-             are the pair the external prototype ran on. The driver is
+             Versions NOT verified as latest; bump deliberately. The driver is
              42.7.13 since 2026-10-05, from 42.7.4: CVE-2025-49146,
              channel binding not enforced when required, fixed in 42.7.7. -->
         <zonky.postgres.version>2.2.2</zonky.postgres.version>

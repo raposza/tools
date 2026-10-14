@@ -13,6 +13,7 @@ import com.raposza.sandbox.app.PharmaFixture;
 import com.raposza.sandbox.app.PharmaLedger;
 import com.raposza.sandbox.app.PharmaOffer;
 import com.raposza.sandbox.app.PharmaStory;
+import com.raposza.runtime.localnet.SpliceInstallations;
 import com.raposza.runtime.settings.RaposzaSettings;
 
 import java.awt.Component;
@@ -214,6 +215,15 @@ public final class PharmaSession {
 
 
     /**
+     * The story is no longer on the ledger this window is pointed at - another
+     * Splice is another network - so it may be created again.
+     */
+    public void forgetRun() {
+        this.flagRan = false;
+    }
+
+
+    /**
      * Asks, and on `Yes` builds. ON THE EVENT THREAD.
      *
      * @param owner the dialog's parent, or null
@@ -226,6 +236,16 @@ public final class PharmaSession {
      */
     public void offer(Component owner, CantonInstallation instStock, Runnable runBegun,
             Runnable runReady, Runnable runFailed) {
+        // NO SPLICE, NO OFFER - his instruction, `todo.md` A-75. Ahead of the
+        // Canton test, because without Splice there is no LocalNetND for the
+        // fixture to go onto whatever Canton is installed; the setting is
+        // still the first answer, as PharmaOffer orders them.
+        boolean flagSetting = RaposzaSettings.current().flagOfferPharma();
+        boolean flagSplice = !SpliceInstallations.lstVersion().isEmpty();
+        // SILENTLY - his instruction, 2026-10-13: "Drop this message". The
+        // Splice box is empty, and that says it.
+        if (flagSetting && !flagSplice)
+            return;
         if (instStock == null) {
             say.accept("Pharma test data not offered: " + PharmaOffer.STR_WHY_NO_CANTON);
             return;
@@ -238,8 +258,7 @@ public final class PharmaSession {
         Path fileBuilt = PharmaFixture.fileDar(dirProjectHere);
         boolean flagBuilt = Files.isRegularFile(fileBuilt);
 
-        String strWhyNot = PharmaOffer.strWhyNot(
-                RaposzaSettings.current().flagOfferPharma(), strSdk, flagBuilt);
+        String strWhyNot = PharmaOffer.strWhyNot(flagSetting, flagSplice, strSdk, flagBuilt);
         if (strWhyNot != null) {
             // ONLY THE MACHINE GAP IS WORTH A LINE. `switched off` is a state
             // the reader chose and can see on the Settings tab, and saying it
@@ -612,6 +631,20 @@ public final class PharmaSession {
                 PharmaStory.STR_T_DISPOSITION);
         ledgerProducer.strSubmit(cast.strQaProducer(),
                 PharmaStory.strCloseQuarantine(strQuarantine, strDisposition));
+
+        // PARTICIPANT_ADMIN IS NOT A SUPERUSER - his instruction, 2026-10-13:
+        // "LocalNetND matches Single. participant_admin is NOT superuser." The
+        // parties were granted to it above to populate the story and nothing
+        // else; left in place they made it see every contract of its
+        // organization, which on Single it does not. Each organization's
+        // superuser is the account that sees them.
+        phase("taking the parties back from the population account");
+        for (String strParty : cast.lstProducer()) {
+            ledgerProducer.revokeActAs(PharmaLedger.STR_USER, strParty);
+        }
+        for (String strParty : cast.lstSupplier()) {
+            ledgerSupplier.revokeActAs(PharmaLedger.STR_USER, strParty);
+        }
         return true;
     }
 

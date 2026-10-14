@@ -377,6 +377,19 @@ public final class DarsPane extends JPanel {
 
 
     /**
+     * @return every DAR in the store as files, ticked or not, in the order the
+     *         table holds them
+     */
+    public List<Path> lstFileAll() {
+        List<Path> lstOut = new ArrayList<>();
+        for (Row row : lstRow) {
+            lstOut.add(row.fileDar);
+        }
+        return lstOut;
+    }
+
+
+    /**
      * @param flagOn whether the tab accepts input; false while a stack is up,
      *        because the set that was uploaded is not editable afterwards
      */

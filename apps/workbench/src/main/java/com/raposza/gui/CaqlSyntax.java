@@ -54,8 +54,13 @@ public final class CaqlSyntax implements DocumentListener {
      */
     public static final int CNT_FONT = 13;
 
-    /** Grey: present, and quieter than the statements around it. */
-    private static final Color COLOR_COMMENT = new Color(0x80, 0x80, 0x80);
+    /**
+     * BLUE, SO A READER SEES IT - his instruction, 2026-10-13: "Make the
+     * comments color blue so that users can actually see it." The starters'
+     * comments say who runs each statement. A brighter blue than
+     * {@link #COLOR_ID}'s, so a comment and an id are told apart.
+     */
+    private static final Color COLOR_COMMENT = new Color(0x1e, 0x6f, 0xd9);
 
     /** Dark green, and bold, which is what the keywords are asked to be. */
     private static final Color COLOR_KEYWORD = new Color(0x00, 0x64, 0x00);

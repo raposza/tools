@@ -32,7 +32,7 @@ import java.util.Set;
  *
  * <h2>Nothing about the schema is assumed. All of it is discovered</h2>
  *
- * The prototype's queries are 2.10's, and the corpus has never measured 3.x's
+ * The known queries are 2.10's, and the corpus has never measured 3.x's
  * internal layout. So the SCHEMA is found by asking which one owns
  * `participant_events_create`, every COLUMN is chosen from what
  * `information_schema` reports, and each missing piece degrades to a blank

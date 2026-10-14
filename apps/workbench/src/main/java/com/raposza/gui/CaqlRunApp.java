@@ -15,7 +15,6 @@ import com.raposza.caql.Runner;
 import com.raposza.caql.Stmt;
 import com.raposza.caql.Transcript;
 import com.raposza.jwt.ProfileAuthStore;
-import com.raposza.lf.LfDecoder;
 import com.raposza.render.LineRenderer;
 import com.raposza.spi.LedgerClient_i;
 import com.raposza.spi.Targets;
@@ -132,8 +131,10 @@ public final class CaqlRunApp {
         // classpath, and there can be only one of those - the two Ledger API
         // binding jars collide on 306 class names. This class names none.
         try (LedgerClient_i client = Targets.only().connect(profile, source)) {
+            // THE SAME READER CHOICE AS THE WINDOW - an installed Canton's,
+            // so a script runs against every package the participant accepts.
             TypeRegistry_i registry = RegistryLoader.load(client, new FilePackageCache(),
-                    new LfDecoder());
+                    new LfReaderChoice());
 
             Runner runner = new Runner(client, registry,
                     args.flagValidate ? RunConfig.ofValidate() : RunConfig.ofRun(),

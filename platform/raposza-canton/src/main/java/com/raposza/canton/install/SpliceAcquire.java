@@ -4,6 +4,7 @@ package com.raposza.canton.install;
 
 import com.raposza.runtime.localnet.SpliceCheck;
 import com.raposza.runtime.localnet.SpliceInstallations;
+import com.raposza.runtime.localnet.SpliceLaunch;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -71,8 +72,9 @@ import java.util.stream.Stream;
  * The tarball carries one top directory, `splice-node/`, so it is unpacked into
  * the version directory as it is - exactly what `probe_bundle.sh` did. `tar`
  * is on Windows too, per {@link Extract}. The result counts only when
- * `bin/splice-node` is executable, the same test {@link SpliceInstallations}
- * lists by.
+ * {@link SpliceLaunch#isInstalled} says so - `bin/splice-node` executable on
+ * Linux, `lib/splice-node.jar` on Windows, `todo.md` W-14 - the same test
+ * {@link SpliceInstallations} lists by.
  *
  * Author Claude/bentzn
  */
@@ -305,8 +307,8 @@ public final class SpliceAcquire {
         if (nExit != 0)
             throw new IOException("tar exited " + nExit + " unpacking " + fileKept);
         if (!isInstalled(dirBundle))
-            throw new IOException(strName + " unpacked, but " + dirBundle
-                    + "/bin/splice-node is not there or not executable");
+            throw new IOException(strName + " unpacked, but "
+                    + SpliceLaunch.fileRequired(dirBundle) + " is not there or not usable");
 
         // THE POST-INSTALL CHECK - his instruction, 2026-09-23, after 0.8.2 was
         // installed from this window and could not start. A bundle that fails
@@ -328,10 +330,11 @@ public final class SpliceAcquire {
 
     /**
      * @param dirBundle a `splice-node` directory
-     * @return whether its launcher is executable - the test the Splice box lists by
+     * @return whether this machine can start it - the test the Splice box lists
+     *         by, {@link SpliceLaunch#isInstalled}
      */
     static boolean isInstalled(Path dirBundle) {
-        return Files.isExecutable(dirBundle.resolve("bin").resolve(SpliceInstallations.STR_BUNDLE));
+        return SpliceLaunch.isInstalled(dirBundle);
     }
 
 

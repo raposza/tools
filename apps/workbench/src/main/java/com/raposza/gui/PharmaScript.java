@@ -74,14 +74,26 @@ import java.util.List;
  * `Completed successfully.`, exercising AS Kestrel-QA, on 2026-09-23 - D-845.
  * That was the measurement this pair waited for, `todo.md` A-30.
  *
+ * That tab could act AS Kestrel-QA only because the population had left
+ * `participant_admin` holding the organization's parties. Since 2026-10-13
+ * the population takes them back - his rule, `participant_admin` is NOT
+ * `superuser`, as on Single - so the business lines run as their role or
+ * the organization's `superuser`, and `participant_admin` runs the
+ * administrative pair and nothing else.
+ *
  * THE TRAINEE IS THE ORGANIZATION'S OWN, `Kestrel-Trainee` or
  * `Vinterberg-Trainee`, with a user of the same name in lower case. Both
  * participants' parties are visible from both, so one name on each would list
  * twice under one name on a LocalNetND that ran both scripts. Neither name
  * starts with a role hint, so a trainee never changes which script a tab gets.
  *
- * The pair needs no contract, so it is emitted on a ledger without the
- * anchor too. NO `superuser` on those lines: it holds parties and no admin
+ * NOTHING IS LEFT OUT FOR WANT OF A CONTRACT - his instruction, 2026-10-13:
+ * "Do not expect the script to run in its entirety. The user will go through
+ * and execute line by line." The read is made as the selected user, and
+ * `participant_admin` holds no party, so the receipt and the lot are often
+ * not in it. The FETCH then finds them by Story 1's lot number, `FETCH ...
+ * WHERE ... SINGLE`, and the writes target the binding either way. NO
+ * `superuser` on the administrative lines: it holds parties and no admin
  * rights - D-808.
  *
  * <h2>The ids are the ledger's own, SHORTENED</h2>
@@ -116,6 +128,14 @@ public final class PharmaScript {
 
     /** What the producer's chain creates first. */
     public static final String NAME_INSPECTION = "IncomingInspection";
+
+    /**
+     * STORY 1'S LOT, which the receipt and the lot are found by when the read
+     * did not return them. The Sandbox writes it - `PharmaStory.STR_LOT` - and
+     * the Workbench does not depend on the Sandbox, so the value is repeated
+     * here. One receipt and one lot carry it, which `SINGLE` requires.
+     */
+    public static final String STR_LOT_STORY = "LOT-88213";
 
     /** What the supplier's chain creates first. */
     public static final String NAME_COA = "CertificateOfAnalysis";
@@ -258,30 +278,28 @@ public final class PharmaScript {
         StringBuilder buf = new StringBuilder();
         buf.append("-- Pharma fixture, Kestrel - the producer's participant.\n");
         buf.append("-- Ctrl-Enter runs the statement the caret is in, however many lines it\n");
-        buf.append("-- runs to; Run runs all of it.\n");
+        buf.append("-- runs to.\n");
         buf.append("\n");
         buf.append("-- READS\n");
-        buf.append(who(USER_QA));
+        buf.append(whoAdmin());
         buf.append("LIST PARTIES;\n");
         buf.append("LIST USERS;\n");
         buf.append("GET USER " + quoted(USER_QA) + ";\n");
+        buf.append("\n").append(who(USER_QA));
         // ONE QUERY, sieved on the field the write half sets: run it again
         // afterwards and the count has moved.
         buf.append(query(idQa, NAME_INSPECTION, "conforms = false"));
-        if (idReceipt != null) {
-            buf.append("\n").append(who(USER_RECEIVING));
-            buf.append("receipt = AS ").append(idReceiving).append(" FETCH ")
-                    .append(quoted(idReceipt)).append(";\n");
-            buf.append("\n");
-            buf.append("-- WRITES. An incoming inspection of our own, and the quarantine it\n");
-            buf.append("-- leads to. THE QUARANTINE NAMES NO SUPPLIER PARTY: run the supplier\n");
-            buf.append("-- tab's script after this one and the contract is not there. That is\n");
-            buf.append("-- the fixture's whole point.\n");
-            buf.append(who(USER_QA));
-            buf.append(inspect(idQa, idReceipt, idManufacturing));
-            buf.append("\n").append(who(USER_QA));
-            buf.append(quarantine(idQa));
-        }
+        buf.append("\n").append(who(USER_RECEIVING));
+        buf.append(fetch("receipt", idReceiving, NAME_RECEIPT, idReceipt));
+        buf.append("\n");
+        buf.append("-- WRITES. An incoming inspection of our own, and the quarantine it\n");
+        buf.append("-- leads to. THE QUARANTINE NAMES NO SUPPLIER PARTY: run the supplier\n");
+        buf.append("-- tab's script after this one and the contract is not there. That is\n");
+        buf.append("-- the fixture's whole point.\n");
+        buf.append(who(USER_QA));
+        buf.append(inspect(idQa, idManufacturing));
+        buf.append("\n").append(who(USER_QA));
+        buf.append(quarantine(idQa));
         buf.append(administrative(HINT_TRAINEE_PRODUCER, USER_TRAINEE_PRODUCER));
 
         return buf.toString();
@@ -300,27 +318,25 @@ public final class PharmaScript {
         StringBuilder buf = new StringBuilder();
         buf.append("-- Pharma fixture, Vinterberg - the supplier's participant.\n");
         buf.append("-- Ctrl-Enter runs the statement the caret is in, however many lines it\n");
-        buf.append("-- runs to; Run runs all of it.\n");
+        buf.append("-- runs to.\n");
         buf.append("\n");
         buf.append("-- READS\n");
-        buf.append(who(USER_QA));
+        buf.append(whoAdmin());
         buf.append("LIST PARTIES;\n");
         buf.append("LIST USERS;\n");
         buf.append("GET USER " + quoted(USER_QA) + ";\n");
+        buf.append("\n").append(who(USER_QA));
         buf.append(query(idQa, NAME_COA, "issuedAt >= " + quoted(STR_SINCE)));
-        if (idLot != null) {
-            buf.append("\n").append(who(USER_PRODUCTION));
-            buf.append("lot = AS ").append(idProduction).append(" FETCH ")
-                    .append(quoted(idLot)).append(";\n");
-            buf.append("\n");
-            buf.append("-- WRITES. A certificate of our own on the lot, and the shipment it\n");
-            buf.append("-- leads to. The second exercise takes its target out of the first\n");
-            buf.append("-- one's result, $coa.\n");
-            buf.append(who(USER_QA));
-            buf.append(issueCoa(idQa, idLot));
-            buf.append("\n").append(who(USER_SHIPPING));
-            buf.append(ship(idShipping));
-        }
+        buf.append("\n").append(who(USER_PRODUCTION));
+        buf.append(fetch("lot", idProduction, NAME_LOT, idLot));
+        buf.append("\n");
+        buf.append("-- WRITES. A certificate of our own on the lot, and the shipment it\n");
+        buf.append("-- leads to. The second exercise takes its target out of the first\n");
+        buf.append("-- one's result, $coa.\n");
+        buf.append(who(USER_QA));
+        buf.append(issueCoa(idQa));
+        buf.append("\n").append(who(USER_SHIPPING));
+        buf.append(ship(idShipping));
         buf.append(administrative(HINT_TRAINEE_SUPPLIER, USER_TRAINEE_SUPPLIER));
 
         return buf.toString();
@@ -345,6 +361,19 @@ public final class PharmaScript {
 
 
     /**
+     * NO `superuser` - it holds its organization's parties and no admin
+     * rights, so `LIST PARTIES`, `LIST USERS` and `GET USER` name the one user
+     * that can run them. His rule, 2026-10-13: `participant_admin` is NOT
+     * `superuser`, on Single and on LocalNetND alike.
+     *
+     * @return the comment line, terminated
+     */
+    private static String whoAdmin() {
+        return "-- User: " + USER_ADMIN + "\n";
+    }
+
+
+    /**
      * `ALLOCATE PARTY` and then `CREATE USER` on the party it returned, as
      * Aviation's script ends. Only `participant_admin` can run either, so the
      * comment names it and no alternative.
@@ -362,6 +391,30 @@ public final class PharmaScript {
                 + PAD_WITH + "\"primaryParty\": \"$trainee\",\n"
                 + PAD_WITH + "\"rights\": [ { \"canReadAs\": \"$trainee\" } ]\n"
                 + "};\n";
+    }
+
+
+    /**
+     * The contract the writes act on, bound as `strName`.
+     *
+     * BY ITS ID when the read returned it, and otherwise BY STORY 1'S LOT -
+     * `FETCH ... WHERE lotNumber = ... SINGLE`, which binds the one contract
+     * that matches and refuses none or several. Either way the binding is the
+     * target, so the writes read the same on any ledger.
+     *
+     * @param strName the binding
+     * @param idParty who reads
+     * @param nameEntity the template, unqualified
+     * @param idContract its id from the read, or null when the read had none
+     * @return the FETCH statement, terminated
+     */
+    private static String fetch(String strName, String idParty, String nameEntity,
+            String idContract) {
+        String strHead = strName + " = AS " + idParty + " FETCH ";
+        if (idContract != null)
+            return strHead + quoted(idContract) + ";\n";
+        return strHead + NAME_MODULE + ":" + nameEntity + "\n" + PAD_WITH
+                + "WHERE lotNumber = " + quoted(STR_LOT_STORY) + " SINGLE;\n";
     }
 
 
@@ -395,13 +448,12 @@ public final class PharmaScript {
      * exactly these shapes.
      *
      * @param idQa the controller
-     * @param idReceipt the receipt this inspects
      * @param idManufacturing the choice's one party argument, producer-side
      * @return the EXERCISE statement, terminated
      */
-    private static String inspect(String idQa, String idReceipt, String idManufacturing) {
+    private static String inspect(String idQa, String idManufacturing) {
         return "inspection = AS " + idQa + "\n"
-                + PAD_WITH + "EXERCISE ON " + quoted(idReceipt) + " Inspect WITH {\n"
+                + PAD_WITH + "EXERCISE ON $receipt Inspect WITH {\n"
                 + PAD_FIELD + field("inspectionNumber", STR_INSPECTION_CAQL) + ",\n"
                 + PAD_FIELD + field("inspectedAt", STR_INSPECTED_AT) + ",\n"
                 + PAD_FIELD + "\"tests\": [\n"
@@ -445,12 +497,11 @@ public final class PharmaScript {
      * than a copy of the producer's.
      *
      * @param idQa the controller
-     * @param idLot the lot this certifies
      * @return the EXERCISE statement, terminated
      */
-    private static String issueCoa(String idQa, String idLot) {
+    private static String issueCoa(String idQa) {
         return "coa = AS " + idQa + "\n"
-                + PAD_WITH + "EXERCISE ON " + quoted(idLot) + " IssueCoa WITH {\n"
+                + PAD_WITH + "EXERCISE ON $lot IssueCoa WITH {\n"
                 + PAD_FIELD + field("certificateNumber", STR_COA_CAQL) + ",\n"
                 + PAD_FIELD + field("issuedAt", STR_ISSUED_AT) + ",\n"
                 + PAD_FIELD + "\"tests\": [\n"

@@ -5,11 +5,27 @@
 **This is a REVIEW, not an audit.** It was written by the people who wrote the
 code, from a static reading of this tree on 2026-09-25, read again on
 2026-09-26 against the tree released as 0.4.0, on 2026-09-27 for 0.4.1, on
-2026-10-05 for 0.5.0, and on 2026-10-06 for 0.5.0 with Raposza OIDC 0.5.1.
+2026-10-05 for 0.5.0, on 2026-10-06 for 0.5.0 with Raposza OIDC 0.5.1, and on
+2026-10-14 for 0.6.0.
 Nothing in it was
 established by a third party, and no third party has signed anything about it.
 When an external audit exists it will be published beside this document,
 unedited.
+
+**Reviewed 2026-10-14 for 0.6.0.** The changes since 0.5.0 were read against
+the tree, and `SECURITY.md` with them; Raposza OIDC stays at 0.5.1. **TWO
+STATEMENTS WERE STALE and are corrected:** section 3 said the discovery
+document answers `GET /` only, and section 2 that a Splice bundle is started
+through `bin/splice-node`, which on Windows it no longer is. **ADDED:** how
+Splice is started on each platform, in section 1; both applications load the
+Daml-LF reader from an installed Canton's jar - section 1 and L-15;
+the discovery document's DARs and `GET /dars` in section 3; the data source
+classes put first on Canton's and Splice's classpath on Windows, in sections 1
+and 4 - on the single participant that predates 0.5.0 and was not described;
+the DPM install of the single participant in section 2; the Pharma
+population's grants in section 5; LocalNetND's proxy bypass for loopback in
+section 7; the Workbench's built-in reader in section 9. The rest stands as
+reviewed for 0.5.0.
 
 **Reviewed 2026-10-06 for 0.5.0.** Raposza OIDC moved to 0.5.1, its code
 unchanged, and the dependencies were reviewed again; `SECURITY.md` was read
@@ -88,7 +104,7 @@ What the Sandbox runs:
 | `dpm`, `daml` | the installed toolchain | `ToolchainInstall`, `AviationRun`, `DamlScriptRun` |
 | `tar` | `PATH` | `Extract`, `SpliceAcquire` |
 | a downloaded installer: `dpm bootstrap`, `install.sh` / `install.bat` | the archive just unpacked - section 2 | `ToolchainInstall` via `InstallRunner` |
-| `splice-node` | the Splice bundle | `LocalNetRunner`, `SpliceCheck` |
+| `splice-node` | the Splice bundle: `bin/splice-node` on Linux; on Windows, where that shell script cannot run, `lib/splice-node.jar` under `java` from the Sandbox's own runtime (`SpliceLaunch`) | `LocalNetRunner`, `SpliceCheck` |
 | `xdg-open` | `PATH`, only when `Desktop.browse` fails | `JwtPane` |
 
 **Raposza OIDC is not built here.** `JwtMintProcess.fileJarFound()` takes the
@@ -107,7 +123,24 @@ arguments by its own rules. The arguments passed are version strings, file
 paths, a script name and a ledger host; whether any of them can carry a
 metacharacter taken from user input was NOT established by this review.
 
+**Windows: classes of the Sandbox's own ahead of Canton's jar.** PostgreSQL for
+Windows refuses a setting Canton and Splice send on their connections, so on
+Windows the Sandbox copies two class files out of its own jar,
+`WinPgDataSource`, before each start - into the work directory's `pgshim/` for
+the single participant, into `<state root>/localnet/pgshim/` for LocalNetND -
+and puts that directory first on the classpath of Canton and, on LocalNetND,
+of Splice (`PgShim`, `LocalNetRunner.useDataSource`). Anything that can write
+that directory chooses code that runs inside Canton - the same account.
+
 The Workbench starts no process.
+
+**Both applications load code from an installed Canton.** The Daml-LF reader -
+for the Workbench's package reads and for the Sandbox's `GET /dars` - is taken
+from the jar of the newest open-source Canton 3.5.1 or later the machine has,
+through a class loader of its own, and run without a digest check
+(`LfReaderSource`, `LfReaderLoader`). With none, the Workbench uses the reader
+built into its jar (`LfReaderChoice`). Anything that can write the toolchain
+directories chooses that code - L-15.
 
 Configuration - `~/.raposza/settings.properties`, the per-version profiles,
 `~/.raposza/ledger_hosts`, and the command line - is TRUSTED INPUT in the
@@ -132,7 +165,7 @@ start. The Workbench downloads nothing.
 
 | what | from | when |
 | --- | --- | --- |
-| the newest DPM version string | `https://get.digitalasset.com/install/latest` | the toolchain banner's Install |
+| the newest DPM version string | `https://get.digitalasset.com/install/latest` | the toolchain banner's Install on LocalNetND; on the single participant, the SDK row's Install on a machine with no DPM, after **Install DPM?** |
 | the DPM archive | `https://get.digitalasset.com/install/dpm-sdk/dpm-<v>-<os>-<arch>.tar.gz` or `.zip` | the same |
 | a Daml SDK archive | `https://github.com/digital-asset/daml/releases/download/v<v>/...` | an Install in the SDK dialog, only where no DPM is present |
 | Canton and the SDK components | `oci://europe-docker.pkg.dev/da-images/public-all/components/...`, fetched by `dpm`, not by this code | an Install in the SDK dialog; `dpm version --all` also runs when that dialog opens |
@@ -147,8 +180,8 @@ where the server sends one, the `Content-Length`, and writes through a `.part`
 file that is moved into place on success. It computes no digest and checks no
 signature. The DPM archive is unpacked and its `bin/dpm bootstrap` run; the SDK
 archive is unpacked and its `install.sh` or `install.bat` run; a Splice bundle
-is unpacked and `bin/splice-node daemon` started once to prove it starts. That
-is L-1.
+is unpacked and started once with `daemon` to prove it starts - section 1 says
+how on each platform. That is L-1.
 
 `SpliceAcquire` does compute a SHA-256 of the kept archive - and writes it into
 `SOURCE.txt` beside the bundle as provenance. Nothing reads it back and nothing
@@ -174,7 +207,7 @@ is a setting.
 
 | listener | default port | bound to | authentication |
 | --- | --- | --- | --- |
-| discovery document (Sandbox) | 32001 | `127.0.0.1` - `DiscoveryServer`, no setting changes it | **none**; `GET /` only, anything else 404 or 405 |
+| discovery document (Sandbox) | 32001 | `127.0.0.1` - `DiscoveryServer`, no setting changes it | **none**; `GET /` and `GET /dars` only, anything else 404 or 405 |
 | the window's page server, `RawarServer` | 31100, a setting | `127.0.0.1` - `InetAddress.getLoopbackAddress()`; up while the window is open, with or without a stack | **none of its own** - below |
 | Raposza OIDC, started by the Sandbox | 32002 | **`127.0.0.1`** - `JwtMintProcess.lstArgSpring()` passes `--server.address=127.0.0.1` | `/mint` **none**; admin paths `admin` / `123456` - see Raposza OIDC's own review |
 | embedded PostgreSQL | 32101 | PostgreSQL's default, `localhost`: the embedded server sets no `listen_addresses` | **trust** - `initdb -A trust`; any password is accepted |
@@ -212,6 +245,12 @@ provider, one `GET` away from a token for that participant. **In
 `&secret=`** - `JwtMintProcess`, because the provider has to sign with the key
 the participant verifies. It publishes no token and no admin token.
 
+**It also lists the DARs** - name, version, package id, origin, `selected` or
+`uploaded`, and the file's path on disk - and the snapshot a running stack was
+restored from. **`GET /dars`** answers with every template, choice, field and
+type in those DARs, decoded from the files on the request's own thread, two
+requests at a time; a description that fails answers with its reason.
+
 **LocalNetND's reverse proxy answers the JSON API hosts with
 `Access-Control-Allow-Origin: *`** and GET, POST, PUT, DELETE and OPTIONS, as
 the vendor's own proxy does - `LocalNetWeb`, `LocalNetUi`. In the default HS256
@@ -236,7 +275,7 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 | `profiles/<version>-<edition>.properties` (Sandbox) | the form, INCLUDING the HMAC shared secret, `auth.secret`, in clear | umask |
 | `profiles/<name>.properties` (Workbench) | the auth mode and, ONLY if the user ticks "save", a bearer token in clear | **`rw-------`**, set after the write |
 | `audit.jsonl` | one line per CaQL submission | **`rw-------`** at creation |
-| `sandbox/<version>/work/` | the generated Canton configuration - which holds the admin token, the HMAC secret and the database password - logs, `sandbox.properties`, and `admin-token.txt` | umask |
+| `sandbox/<version>/work/` | the generated Canton configuration - which holds the admin token, the HMAC secret and the database password - logs, `sandbox.properties`, `admin-token.txt`, and on Windows `pgshim/` - section 1 | umask |
 | `sandbox/<version>/data/` | the PostgreSQL cluster; wiped at every start unless `--data-dir` is given | as PostgreSQL creates it |
 | `snapshots/` | whole copies of a stopped PostgreSQL data directory, per version and per LocalNetND key | the data files keep their mode; the directories and the meta file take the umask |
 | `fixtures/aviation`, `fixtures/pharma` | Daml project sources | umask |
@@ -245,6 +284,7 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 | `raposza-oidc/raposza-oidc-app.jar` | the carried provider, unpacked | umask; `.part` then move |
 | `oidc-access/<port>/access.log` | the provider's access log, one line per request WITH ITS QUERY - so a mint for an HMAC participant leaves that participant's secret here. In `java.io.tmpdir` until 2026-10-05 | **`rwx------`** on both directories where the file system has POSIX permissions; the file takes the umask |
 | `packages/` | cached Daml-LF packages | umask; temporary file then atomic move |
+| `localnet/pgshim/` (Windows) | the data source classes put first on LocalNetND's classpaths - section 1 | umask; rewritten before each start |
 
 The embedded PostgreSQL's binaries are unpacked into `java.io.tmpdir`, or,
 when that fails, into `raposza-tmp` beside the Sandbox jar (`SandboxPostgres`).
@@ -296,6 +336,11 @@ authentication, so the password is not checked.
 Ledger API's `fixed-admin-token` and valid while the participant runs. It is written to
 `admin-token.txt` and into the Canton configuration in the work directory, and
 stays there after the stack stops.
+
+**The Pharma population's grants.** To submit as each organization's parties,
+the population grants `participant_admin` act-as rights over them and revokes
+those grants as its last step (`PharmaSession`, `PharmaLedger.revokeActAs`). A
+population that fails part-way leaves them in place.
 
 **Token lifetimes.** 24 h for a Sandbox-minted token on Canton 3.5.6 and later,
 and 240 s below that, where the participant refuses longer ones. A token the
@@ -363,6 +408,12 @@ What does leave:
 * the Workbench's connections to the hosts its profiles name, and to the token
   URL a discovery document publishes - which need not be on loopback.
 
+LocalNetND's own calls on loopback are kept away from a proxy the machine sets
+for every JVM: both of its process groups start with
+`-Dhttp.nonProxyHosts=localhost|127.*|[::1]` added to `JAVA_TOOL_OPTIONS`,
+unless that already names a list, which is then left as it is
+(`LocalNetRunner.strToolOptions`).
+
 The LocalNetND web UIs' configuration names a favicon on `www.hyperledger.org`,
 copied from the vendor's; the BROWSER fetches it, not this process. On
 Canton 2.x the help dialog has no in-window page: its button hands a
@@ -395,7 +446,7 @@ in `platform/pom.xml`:
 | gRPC (`grpc-netty`, `grpc-protobuf`, `grpc-services`) | 1.60.0 | the Ledger and Admin APIs |
 | Protocol Buffers | 3.25.8 | the same |
 | `com.daml:bindings-java` | 2.9.6 | Ledger API v1 |
-| `com.daml:daml-lf-archive-reader_2.13` | 3.4.11 | reading DARs |
+| `com.daml:daml-lf-archive-reader_2.13` | 3.4.11 | reading DARs: the Workbench's built-in reader, used when no installed Canton lends one - section 1. The Sandbox's pom excludes it from its `raposza-lf` dependency |
 | Bouncy Castle (`bcprov-jdk18on`) | 1.85 | not declared here: it arrives through the Daml artefacts, and the version is managed so that it is ours |
 | Guava | 33.3.0-jre | the same |
 | Scala library | 2.13.16 | the same - the Daml-LF reader's runtime |
@@ -506,6 +557,9 @@ owed.
   anything that reaches it** on `127.0.0.1:31100`, with the caller's own
   credential - section 3. With the stack unauthenticated, that is an
   unauthenticated ledger on a second port.
+* **L-15 The Daml-LF reader is loaded from an installed Canton's jar**, the
+  newest open-source 3.5.1 or later on the machine, into both applications,
+  without a digest check - section 1.
 
 
 ## 12 - The trust boundary, stated plainly
@@ -518,7 +572,8 @@ owed.
   database under trust authentication, the Canton APIs and the page server in
   front of the JSON Ledger API are all open to it.
 * Anyone who can write the state root, the local Maven repository or the
-  toolchain directories. They choose what runs.
+  toolchain directories. They choose what runs - in the processes the Sandbox
+  starts and, through the Daml-LF reader, inside both applications.
 * The vendor's download hosts and the network path to them, up to TLS.
 * On Canton 2.x, anyone who can reach the machine's network interfaces.
 

@@ -32,17 +32,17 @@ import javax.swing.tree.TreeSelectionModel;
  * What is on the ledger: parties, templates, and the contracts that are and
  * are not still active.
  *
- * <h2>Read the way the CantonSandboxPqs prototype read it</h2>
+ * <h2>Read over JDBC</h2>
  *
  * Over JDBC, out of Canton's own schema, because that works with no token, no
- * endpoint path and no client library - the prototype established this and it
- * is the half of it that is version-independent. The alternative is the JSON
+ * endpoint path and no client library, and that half of it is
+ * version-independent. The alternative is the JSON
  * Ledger API, whose paths differ between v1 on 2.x and v2 on 3.x and are not
  * banked in the inventory.
  *
  * <h2>Nothing about the schema is assumed. All of it is discovered</h2>
  *
- * The prototype's queries are 2.10's, and the corpus has never measured 3.x's
+ * The known queries are 2.10's, and the corpus has never measured 3.x's
  * internal layout. So the SCHEMA is found by asking which one owns
  * `participant_events_create`, every COLUMN is chosen from what
  * `information_schema` reports, and each missing piece degrades to a blank
@@ -51,7 +51,7 @@ import javax.swing.tree.TreeSelectionModel;
  *
  * Parties and templates both come out of `string_interning`, which stores them
  * with a one-character tag - `p|` for a party and `t|` for a template. That is
- * banked evidence, recorded in the prototype's own javadoc, and it is why
+ * the 2.10 layout, and it is why
  * neither needs a table whose name would have to be guessed.
  *
  * <h2>The reading itself is in {@link LedgerProbe}</h2>

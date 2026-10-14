@@ -48,11 +48,9 @@ import java.util.zip.ZipFile;
  * that is exactly what Smart Contract Upgrades stage, and rejecting it would
  * make the catalogue refuse the case it exists to serve.
  *
- * Ported from the prototype's `DarCatalog` as behaviour, not as source: the
- * manifest key, the `Main-Dalf` shape and the package-id extraction are its
- * measurements. Its PascalCase module-name inference is deliberately NOT
- * carried over - it was documented there as a best-effort hint, and a hint that
- * looks like an identifier is worse than an absent field.
+ * The manifest key, the `Main-Dalf` shape and the package-id extraction are
+ * read off the DAR itself. No module name is inferred from a file name: a
+ * hint that looks like an identifier is worse than an absent field.
  *
  * Author Claude/bentzn
  */

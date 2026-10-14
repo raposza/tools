@@ -529,7 +529,8 @@ public final class JsonCoercer {
                 }
                 yield new DamlType.App(subst(val.typeFun(), mapEnv), List.copyOf(lstArg));
             }
-            case DamlType.Prim val -> val;
+            case DamlType.Prim val -> val.typeArg() == null ? val
+                    : new DamlType.Prim(val.kind(), subst(val.typeArg(), mapEnv));
             case DamlType.Numeric val -> val;
             case DamlType.Ref val -> val;
         };
@@ -567,7 +568,7 @@ public final class JsonCoercer {
         }
 
         Substitution_i.Bound bound = optBound.get();
-        if (!type.equals(bound.type())) {
+        if (!erased(type).equals(erased(bound.type()))) {
             throw new CoercionException(strPath, "'" + strText + "' holds "
                     + describe(bound.type()) + " and this field is " + describe(type));
         }
@@ -636,6 +637,37 @@ public final class JsonCoercer {
             flagDot = false;
         }
         return true;
+    }
+
+
+    /**
+     * The type with every contract id's template taken off. A contract id that
+     * CaQL bound has no template - the statement that bound it knows only the
+     * id - and a field declares one; the value is the same string either way,
+     * so the template must not make the two unequal.
+     *
+     * @param type a type
+     * @return the same type, every contract id bare
+     */
+    private static DamlType erased(DamlType type) {
+        return switch (type) {
+            case DamlType.Prim val -> val.typeArg() == null ? val : new DamlType.Prim(val.kind());
+            case DamlType.ListOf val -> new DamlType.ListOf(erased(val.typeElem()));
+            case DamlType.OptionalOf val -> new DamlType.OptionalOf(erased(val.typeElem()));
+            case DamlType.TextMapOf val -> new DamlType.TextMapOf(erased(val.typeValue()));
+            case DamlType.GenMapOf val -> new DamlType.GenMapOf(erased(val.typeKey()),
+                    erased(val.typeValue()));
+            case DamlType.App val -> {
+                List<DamlType> lstArg = new ArrayList<>(val.lstArg().size());
+                for (DamlType typeArg : val.lstArg()) {
+                    lstArg.add(erased(typeArg));
+                }
+                yield new DamlType.App(erased(val.typeFun()), List.copyOf(lstArg));
+            }
+            case DamlType.Numeric val -> val;
+            case DamlType.Ref val -> val;
+            case DamlType.Var val -> val;
+        };
     }
 
 

@@ -31,10 +31,8 @@ import com.raposza.caql.Transcript;
 import com.raposza.jwt.ProfileAuth;
 import com.raposza.jwt.ProfileAuthStore;
 import com.raposza.jwt.TokenParties;
-import com.raposza.lf.LfDecoder;
 import com.raposza.resolve.ChainResolver;
 import com.raposza.spi.LedgerClient_i;
-import com.raposza.spi.LfDecoder_i;
 import com.raposza.spi.Target_i;
 import com.raposza.spi.Targets;
 import com.raposza.types.FilePackageCache;
@@ -289,7 +287,12 @@ final class ParticipantPane extends JPanel {
      */
     private final transient PackageCache_i cachePackage = new FilePackageCache();
 
-    private final transient LfDecoder_i decoderLf = new LfDecoder();
+    /**
+     * An installed Canton's reader when there is one - his decision of
+     * 2026-10-07, so the Workbench reads every package the participant
+     * accepts, LF 2.3 included. See {@link LfReaderChoice}.
+     */
+    private final transient LfReaderChoice decoderLf = new LfReaderChoice();
 
     private transient LedgerClient_i client;
     private transient Resolver_i resolver;
@@ -937,16 +940,19 @@ final class ParticipantPane extends JPanel {
                 // LedgerSnapshot already carries its own: one refused call must
                 // not empty a window that could still show everything else.
                 try {
-                    TypeRegistry_i registryNew =
-                            RegistryLoader.load(clientRead, cachePackage, decoderLf);
+                    List<String> lstUnread = new ArrayList<>();
+                    TypeRegistry_i registryNew = RegistryLoader.load(clientRead, cachePackage,
+                            decoderLf, lstUnread::add);
                     return new Loaded(snapshot, registryNew,
                             MainWindow.count(cachePackage.ids().size(), "package", "packages")
                                     + "   "
                                     + MainWindow.count(registryNew.templates().size(),
-                                            "template known", "templates known"));
+                                            "template known", "templates known"),
+                            strUnread(lstUnread.size()));
                 }
                 catch (RuntimeException ex) {
-                    return new Loaded(snapshot, null, "packages: " + LedgerSnapshot.describe(ex));
+                    return new Loaded(snapshot, null, "packages: " + LedgerSnapshot.describe(ex),
+                            null);
                 }
             }
 
@@ -962,7 +968,10 @@ final class ParticipantPane extends JPanel {
                     remember(snapshot);
                     paneCaql.setScriptIfEmpty(AviationScript.strFor(snapshot));
                     paneCaql.setScriptIfEmpty(PharmaScript.strFor(snapshot));
-                    showProfileColour(profileActive, summary(snapshot, loaded.strPackages()));
+                    String strSummary = summary(snapshot, loaded.strPackages());
+                    if (loaded.strUnread() != null)
+                        strSummary += "   " + loaded.strUnread();
+                    showProfileColour(profileActive, strSummary);
                 }
                 catch (Exception ex) {
                     showProfileColour(profileActive, "READ FAILED");
@@ -984,7 +993,27 @@ final class ParticipantPane extends JPanel {
      *        could not be read
      * @param strPackages what to show about them, counts or the reason
      */
-    private record Loaded(LedgerSnapshot snapshot, TypeRegistry_i registry, String strPackages) {}
+    private record Loaded(LedgerSnapshot snapshot, TypeRegistry_i registry, String strPackages,
+            String strUnread) {}
+
+
+    /**
+     * THE STATUS BAR SAYS IT, though it otherwise says only where - his rule of
+     * 2026-10-07: a failure states its cause in
+     * one line. A package nobody could read is a template CaQL cannot name,
+     * and that is shown nowhere else in the window.
+     *
+     * @param cntUnread how many packages the read skipped
+     * @return the line, or null when every package was read
+     */
+    private String strUnread(int cntUnread) {
+        if (cntUnread == 0)
+            return null;
+        String strCount = MainWindow.count(cntUnread, "package", "packages") + " could not be read";
+        return decoderLf.isBuiltIn()
+                ? strCount + ": " + LfReaderChoice.STR_HINT_STATUS
+                : strCount + " - the terminal the Workbench was started from says why";
+    }
 
 
     /**

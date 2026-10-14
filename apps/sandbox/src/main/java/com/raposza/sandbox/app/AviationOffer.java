@@ -8,8 +8,8 @@ package com.raposza.sandbox.app;
  *
  * <h2>The setting decides, and the machine decides what the question can offer</h2>
  *
- * The developer wants to be asked, and either the fixture is already built or
- * this machine can build it. Either failing is a reason not to raise a dialog,
+ * The developer wants to be asked, and this machine has a Daml SDK for the
+ * selected Canton. Either failing is a reason not to raise a dialog,
  * and the machine gap is worth a line in the log rather than silence - a
  * question that never appears is otherwise indistinguishable from a question
  * that appeared and was answered before anybody looked.
@@ -18,6 +18,12 @@ package com.raposza.sandbox.app;
  * It used to be the third condition, and the caller then staged it anyway - so
  * a fixture built in one session was ticked into the next start of the next
  * session with nothing asked, and `Never` did not stop it either.
+ *
+ * <b>AND IT IS NOT A WAY PAST THE SDK - his instruction, 2026-10-13, `todo.md`
+ * A-75:</b> "If Sandbox can not find a DAML SDK, it can not create the test
+ * fixture. So the gate for 'Install Aviation test fixture' is: is there a DAML
+ * SDK available?" A built DAR on a machine with no SDK was offered until then;
+ * it is not now. Which toolchain carries the SDK is not the question.
  *
  * <h2>Why a class of its own</h2>
  *
@@ -73,10 +79,9 @@ public final class AviationOffer {
         // question they are not being asked.
         if (!flagSetting)
             return STR_WHY_SETTING;
-        // STAGING A BUILT DAR NEEDS NO COMPILER, so a machine that cannot build
-        // is still asked when the fixture is there.
-        if (flagBuilt)
-            return null;
+        // THE GATE IS A DAML SDK, BUILT OR NOT - his instruction, A-75. A DAR
+        // already on disk changes the question's wording, not whether it is
+        // asked.
         if (strSdk == null || strSdk.trim().isEmpty())
             return STR_WHY_TOOLCHAIN;
         return null;

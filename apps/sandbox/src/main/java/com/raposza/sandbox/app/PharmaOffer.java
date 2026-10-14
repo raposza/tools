@@ -16,6 +16,13 @@ package com.raposza.sandbox.app;
  * which is the delivery after this one. Until then the question is Yes or Not
  * now, once per window.
  *
+ * <h2>NO SPLICE, NO OFFER - his instruction, 2026-10-13, `todo.md` A-75</h2>
+ *
+ * "If no Splice is found, do not suggest creating Pharma test fixture." The
+ * fixture lives on a LocalNetND and there is none to start without a Splice
+ * bundle, so the question would be about data nothing can hold. Tested after
+ * the setting and before a built DAR, for that reason.
+ *
  * <h2>Why a class of its own</h2>
  *
  * The window decides this on the event thread at open, and every input is
@@ -40,6 +47,9 @@ public final class PharmaOffer {
     public static final String STR_WHY_TOOLCHAIN =
             "no Daml SDK on this machine can build for the Canton LocalNetND runs";
 
+    /** No Splice bundle on this machine - `todo.md` A-75. */
+    public static final String STR_WHY_NO_SPLICE = "no Splice on this machine";
+
     /** This topology has no Canton to build against, which is a start away. */
     public static final String STR_WHY_NO_CANTON =
             "no installed Canton carries a runtime jar, and the participants run inside one";
@@ -56,7 +66,20 @@ public final class PharmaOffer {
      * @return whether to raise the offer
      */
     public static boolean flagOffer(boolean flagSetting, String strSdk, boolean flagBuilt) {
-        return strWhyNot(flagSetting, strSdk, flagBuilt) == null;
+        return strWhyNot(flagSetting, true, strSdk, flagBuilt) == null;
+    }
+
+
+    /**
+     * @param flagSetting what `fixture.pharma.offer` says
+     * @param flagSplice whether a Splice bundle is installed
+     * @param strSdk the SDK version that can build, or null
+     * @param flagBuilt whether the DAR is already in the store
+     * @return whether to raise the offer
+     */
+    public static boolean flagOffer(boolean flagSetting, boolean flagSplice, String strSdk,
+            boolean flagBuilt) {
+        return strWhyNot(flagSetting, flagSplice, strSdk, flagBuilt) == null;
     }
 
 
@@ -67,12 +90,28 @@ public final class PharmaOffer {
      * @return why the offer is not being made, or null when it is
      */
     public static String strWhyNot(boolean flagSetting, String strSdk, boolean flagBuilt) {
+        return strWhyNot(flagSetting, true, strSdk, flagBuilt);
+    }
+
+
+    /**
+     * @param flagSetting what `fixture.pharma.offer` says
+     * @param flagSplice whether a Splice bundle is installed
+     * @param strSdk the SDK version that can build, or null
+     * @param flagBuilt whether the DAR is already in the store
+     * @return why the offer is not being made, or null when it is
+     */
+    public static String strWhyNot(boolean flagSetting, boolean flagSplice, String strSdk,
+            boolean flagBuilt) {
         // THE SETTING IS TESTED FIRST, and it is the only one of the three that
         // is the developer's own decision. Reporting a toolchain gap to
         // somebody who has switched the whole thing off is noise about a
         // question they are not being asked - Aviation's rule.
         if (!flagSetting)
             return STR_WHY_SETTING;
+        // NO SPLICE, NO OFFER, BUILT OR NOT - his instruction, A-75.
+        if (!flagSplice)
+            return STR_WHY_NO_SPLICE;
         // STAGING A BUILT DAR NEEDS NO COMPILER, so a machine that cannot build
         // is still asked when the fixture is there - Aviation's rule, and it
         // was learned at cost there.

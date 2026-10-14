@@ -196,10 +196,10 @@ public final class AviationScript {
 
         StringBuilder buf = new StringBuilder();
         buf.append("-- Aviation fixture. Ctrl-Enter runs the statement the caret is in,\n");
-        buf.append("-- however many lines it runs to; Run runs all of it.\n");
+        buf.append("-- however many lines it runs to.\n");
         buf.append("\n");
         buf.append("-- READS\n");
-        buf.append(who(USER_ADMIN));
+        buf.append(whoAdmin());
         buf.append("LIST PARTIES;\n");
         buf.append("LIST USERS;\n");
         buf.append("GET USER \"" + USER_ENGINEERING + "\";\n");
@@ -246,9 +246,9 @@ public final class AviationScript {
      * which user it needs.
      *
      * `superuser` is the fixture's own: `CanActAs` on every role, and no
-     * admin rights - which is why the administrative pair does not offer it.
-     * It is named on every line because it is the one user that can run all
-     * of them.
+     * admin rights. It is named on every line that acts or reads as a role,
+     * because it holds every role, and on no line that needs admin rights -
+     * {@link #whoAdmin}.
      *
      * @param idUser the user whose rights the statement needs
      * @return the comment line, terminated
@@ -261,8 +261,11 @@ public final class AviationScript {
     /**
      * NO `superuser`. It holds parties and no participant admin rights -
      * `Main.daml` grants the fixture's superuser `CanActAs` and `CanReadAs`
-     * and nothing else - so the two administrative statements name the one
-     * user that can run them and no alternative.
+     * and nothing else - so the statements that need admin rights name the
+     * one user that can run them and no alternative: `LIST PARTIES`,
+     * `LIST USERS` and `GET USER` among the reads, and the administrative
+     * pair. His rule, 2026-10-13: `participant_admin` is NOT `superuser`,
+     * on Single and on LocalNetND alike.
      *
      * @return the comment line, terminated
      */

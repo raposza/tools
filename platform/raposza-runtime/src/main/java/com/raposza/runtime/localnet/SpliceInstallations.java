@@ -32,8 +32,9 @@ import com.raposza.runtime.settings.RaposzaSettings;
  *
  * <h2>The test is the launcher, not the directory name</h2>
  *
- * `bin/splice-node` executable is the same condition {@link LocalNetRunner#of}
- * refuses on, deliberately: a list that offered a version the runner then
+ * {@link SpliceLaunch#isInstalled} is the same condition {@link LocalNetRunner#of}
+ * refuses on, deliberately - `bin/splice-node` executable on Linux,
+ * `lib/splice-node.jar` on Windows, W-14: a list that offered a version the runner then
  * rejects would move the failure from the dropdown to the start, where it
  * costs a minute instead of nothing. A half-extracted bundle is therefore not
  * listed rather than listed and broken.
@@ -136,8 +137,7 @@ public final class SpliceInstallations {
             for (Path dirVersion : strm.toList()) {
                 if (STR_DIR_RUN.equals(dirVersion.getFileName().toString()))
                     continue;
-                if (Files.isExecutable(dirVersion.resolve(STR_BUNDLE).resolve("bin")
-                        .resolve(STR_BUNDLE)))
+                if (SpliceLaunch.isInstalled(dirVersion.resolve(STR_BUNDLE)))
                     lstOut.add(dirVersion.getFileName().toString());
             }
         }

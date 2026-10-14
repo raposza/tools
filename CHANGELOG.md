@@ -2,6 +2,49 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Changelog
 
+## 0.6.0 - 2026-10-14
+
+* **LocalNetND on Windows.** The Splice bundle carries one launcher, a Unix
+  shell script, so on Windows the Sandbox starts Splice as the JVM that script
+  runs, and a Splice release counts as installed there when
+  `lib/splice-node.jar` is present. PostgreSQL for Windows refuses a setting
+  Canton and Splice send, and LocalNetND answers it the way the single
+  participant already did. Linux starts Splice as before.
+* **LocalNetND behind a proxy.** Both of its process groups start with
+  `-Dhttp.nonProxyHosts=localhost|127.*|[::1]` added to `JAVA_TOOL_OPTIONS`,
+  unless that already names a list. On a machine whose JVMs carry a proxy, the
+  validators' calls to scan on loopback went to the proxy and LocalNetND never
+  came up.
+* **DPM from the window.** On a single participant with no DPM the SDK box is
+  empty, and Install asks **Install DPM?**. It installs DPM into your home
+  directory, with no administrator rights, and selects the SDK DPM brought.
+  The Aviation offer needs an SDK. Install is off while DPM installs.
+* **Splice versions.** The Splice install dialog says it is loading until the
+  list arrives. LocalNetND with no Splice installed offers no Pharma data.
+* **DARs on the discovery document.** It lists the DARs - `selected` for the
+  next start, `uploaded` once a participant has them - and the snapshot a
+  running stack was restored from. `GET /dars` on the same port describes
+  every template, choice, field and type in them.
+* **LF 2.3 in the Workbench.** The Workbench and `GET /dars` read packages with
+  the Daml-LF reader of the newest open-source Canton 3.5.1 or later on the
+  machine, which reads what the participant accepts. With none installed, the
+  Workbench uses its built-in reader and, when that refuses a package, says
+  what to install. The status bar names the packages it could not read. A
+  contract id keeps the template it refers to.
+* **Pharma.** `participant_admin` no longer keeps the act-as rights the
+  population used, so on LocalNetND it sees users and parties and no
+  contracts, as on a single participant. Create Pharma test data is offered
+  again when the Splice box moves to another network.
+* **The starter scripts** fetch Pharma's receipt and lot by lot number when the
+  selected user cannot read them, and run the reads of users and parties as
+  `participant_admin`. They are meant to be run a statement at a time.
+* **The window.** Closing it during a start or a stop no longer leaves Canton,
+  Splice and PostgreSQL running. Save snapshot waits until the Aviation data is
+  created. A stack stopped straight after it started no longer reports a failed
+  user registration. Every Sandbox dialog carries the Sandbox's icon.
+* **The README** is a front page, and `FIRST_INSTALL.md` takes a clean Linux or
+  Windows machine to a running Sandbox and Workbench.
+
 ## 0.5.0 - 2026-10-05
 
 * **Raposza OIDC 0.5.1.** The Sandbox carries and starts 0.5.1, whose settings

@@ -19,8 +19,37 @@ import java.util.List;
  */
 public sealed interface DamlType {
 
-    /** @param kind the primitive kind */
-    record Prim(PrimKind kind) implements DamlType {}
+    /**
+     * A primitive. Only CONTRACT_ID takes an argument: the template or
+     * interface the id points to, as Daml writes "ContractId Account". Added
+     * 2026-10-07 for the Sandbox's DAR description, where a contract id with
+     * no template leaves the reader unable to tell what it may fetch or
+     * exercise on.
+     *
+     * The argument is NULL WHEN UNKNOWN - a contract id a CaQL statement bound,
+     * or a package decoded and cached before the argument was kept. Two contract
+     * ids are the same type to anything that checks a value against a field;
+     * the argument describes, it does not constrain.
+     *
+     * @param kind the primitive kind
+     * @param typeArg for CONTRACT_ID, the type it is applied to - normally a
+     *        Ref, a Var inside a parameterised data type - or null; always null
+     *        for every other kind
+     */
+    record Prim(PrimKind kind, DamlType typeArg) implements DamlType {
+
+        public Prim {
+            if (typeArg != null && kind != PrimKind.CONTRACT_ID)
+                throw new IllegalArgumentException(kind + " takes no type argument");
+        }
+
+
+        /** @param kind the primitive kind, with no argument */
+        public Prim(PrimKind kind) {
+            this(kind, null);
+        }
+
+    }
 
     /** @param cntScale decimal places, 0..37 in LF */
     record Numeric(int cntScale) implements DamlType {}

@@ -87,12 +87,13 @@ The window first asks what to start:
 
 ### Get Canton
 
-A machine with no toolchain shows a banner at the top of the window. Its
-**Install** fetches Digital Asset's package manager, DPM, into your home
-directory. The **Install** button beside the SDK box then opens a dialog that
-installs further SDKs, newest first. On LocalNetND that box lists Splice
-bundles, and the same button lists Splice releases and downloads the one you
-choose into `~/.splice`.
+A machine with no DPM shows an empty SDK box. Its **Install** asks **Install
+DPM?**, fetches Digital Asset's package manager, DPM, into your home directory
+and selects the SDK DPM brought. Once DPM is there, the same button opens a
+dialog that installs further SDKs, newest first. On LocalNetND a banner at the
+top of the window offers DPM instead, the box lists Splice bundles, and the
+button lists Splice releases and downloads the one you choose into
+`~/.splice`.
 
 These downloads are checked by TLS only, and the installers they contain are
 then run. `docs/security-review.md` section 2 says exactly what is fetched and

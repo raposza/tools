@@ -12,7 +12,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.5.0</version>
+        <version>0.6.0</version>
         <relativePath>../../platform/pom.xml</relativePath>
     </parent>
 
@@ -70,6 +70,33 @@
             <groupId>com.raposza</groupId>
             <artifactId>raposza-lf</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <!-- WHICH INSTALLED CANTON LENDS ITS DAML-LF READER - his decision of
+             2026-10-07: the Workbench reads what the participant accepts,
+             LF 2.3 included, by the rule the Sandbox's GET /dars uses
+             (LfReaderSource). Finding the installations is raposza-canton's.
+
+             POSTGRES EXCLUDED, his choice of 2026-10-07. raposza-canton
+             brings raposza-runtime, which declares the embedded PostgreSQL -
+             four platform binary jars - and the driver. Nothing the Workbench
+             calls touches either, so neither enters workbench-app.jar and this
+             edge adds no third-party jar at all. LfReaderChoiceTest runs the
+             installation finder on this module's classpath, so a later change
+             that needs them there fails the gate rather than a user. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-canton</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.zonky.test</groupId>
+                    <artifactId>embedded-postgres</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- RUNTIME scope, and BOTH generations. This module names no class
              from a target: it asks raposza-spi for the ones registered through

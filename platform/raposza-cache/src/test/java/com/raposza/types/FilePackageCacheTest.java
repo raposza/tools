@@ -66,7 +66,7 @@ class FilePackageCacheTest {
                         List.of(new DamlType.Prim(PrimKind.TEXT)))));
 
         ChoiceInfo choiceOwn = new ChoiceInfo("Deposit", true, new DamlType.Ref(idDeposit),
-                new DamlType.Prim(PrimKind.CONTRACT_ID),
+                new DamlType.Prim(PrimKind.CONTRACT_ID, new DamlType.Ref(idAccount)),
                 new ChoiceControllers.Parties(List.of("Bank")), Optional.empty());
 
         ChoiceInfo choiceInherited = new ChoiceInfo("Describe", false,
@@ -126,6 +126,8 @@ class FilePackageCacheTest {
         assertEquals(10, ((DamlType.Numeric) tmpl.lstField().get(0).type()).cntScale());
         assertTrue(back.lstShape().get(1) instanceof DataShape.EnumShape);
         assertTrue(tmpl.typeKey().isPresent());
+        assertEquals(new DamlType.Ref(tmpl.idTemplate()),
+                ((DamlType.Prim) tmpl.lstChoice().get(0).typeReturn()).typeArg());
     }
 
 

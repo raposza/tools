@@ -1,207 +1,83 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z -->
 # Raposza Tools
 
-Developer tooling for Canton and Splice.
+**A complete Canton and Splice development environment on your own machine. No Docker. No containers. One window.**
 
-Raposza provides a local environment for running, inspecting and testing Canton applications — including a complete Splice LocalNet without Docker or other containers.
-
-It currently consists of three closely integrated tools:
-
-* **Sandbox Simple** — runs a local Canton stack as ordinary processes, with a participant, PostgreSQL and supporting services.
-* **Sandbox LocalNetND** — runs a complete Splice LocalNet as ordinary processes, without containers.
-* **Workbench** — explores a running ledger and executes CaQL, Raposza's declarative language for creating, exercising and querying ledger data.
-
-Raposza is intended for local development, integration testing and experimentation, including restricted enterprise environments where Docker is unavailable, inconvenient or prohibited.
-
-> **Status:** Early-stage software. Capabilities are documented together with what has actually been tested and against which Canton/Splice versions. See [README_LONG_TIME.md](README_LONG_TIME.md) for the full technical description.
-
----
-
-## You need
-
-* Java 21
-* A Canton/Daml installation
-* For LocalNetND: the corresponding Splice distribution and its runtime dependencies
-
-Raposza does not require Docker for Sandbox Simple or LocalNetND.
-
----
-
-## Download
-
-Download a release from the [GitHub Releases page](https://github.com/raposza/tools/releases) and unpack it.
-
-Each release carries `sandbox-<version>-app.jar`, `workbench-<version>-app.jar` and `SHA256SUMS`. Start either with `java -jar`.
-
-Or clone the repository:
-
-```
-git clone https://github.com/raposza/tools.git
-cd tools
-```
-
----
-
-## Build
-
-Build the project using the build instructions for your platform: [BUILD_AND_INSTALL.md](BUILD_AND_INSTALL.md), section 3.
-
-See [README_LONG_TIME.md](README_LONG_TIME.md) for detailed build, configuration and compatibility information.
-
----
-
-## Try it
-
-### Sandbox Simple
-
-Start a local Canton development environment:
-
-```
-./run-sandbox.sh --build
-```
-
-Choose **Single participant**, then press **Start**.
-
-Sandbox starts the required processes and gives you a single place to see what is running, inspect logs and manage the local ledger environment.
-
-A start runs in this order:
-
-1. Create the test fixture, if selected.
-2. Create the founding snapshot, which restarts the stack.
-3. Save the snapshot, if selected.
-
-Use Simple when you want a fast local Canton participant without bringing up an entire Splice network.
+Press **Start** and you get a running ledger with real data on it. Then look inside it: parties, packages, templates, contracts and their history. You don't write a line of setup code.
 
 ![The Sandbox running one participant with the Aviation test fixture](docs/images/sandbox-running-aviation.png)
 
-### Sandbox LocalNetND
+---
 
-Start a complete local Splice network:
+## Sandbox — a ledger, one click away
 
-```
-./run-sandbox.sh --build
-```
+* **Single participant** — a Canton participant and its PostgreSQL, started as ordinary processes.
+* **LocalNetND** — a complete Splice LocalNet, with `sv`, `app-provider` and `app-user`, running natively. LocalNet, No Docker.
+* **Data from the first start** — the Aviation fixture on a single participant, and the Pharma fixture across two organizations on LocalNetND.
+* **Snapshots** — every start begins from a clean, known ledger. Save the state you want and return to it whenever you like.
+* **DARs under control** — upload, remove, vet and unvet, per participant.
+* **Authentication included** — Raposza OIDC, a local OpenID Provider, so authenticated ledgers and the Splice web UIs work from the start.
+* **Many Canton versions side by side** — the 2.x and 3.x lines. DPM, SDKs and Splice releases install from the window.
 
-Choose **LocalNetND**, then press **Start**.
-
-LocalNetND means LocalNet — No Docker.
-
-The Splice components run as ordinary local processes rather than containers.
-
-This is particularly useful when developing in environments where Docker cannot be installed or used.
-
-![LocalNetND web UIs and endpoints](docs/images/sandbox-oidc-web-uis.png)
-
-### Workbench
-
-Start Workbench against the running ledger:
-
-```
-./run.sh --build
-```
-
-Choose **a local Sandbox**.
-
-Workbench lets you inspect parties, packages, contracts and ledger activity.
-
-It also includes CaQL.
-
-![Connect to a local Sandbox](docs/images/workbench-connect.png)
+![A complete Splice LocalNet running without containers](docs/images/sandbox-localnetnd-running.png)
 
 ---
 
-## CaQL
+## Workbench — see what is really on the ledger
 
-CaQL is Raposza's declarative ledger fixture and query language.
+* Connects to a running Sandbox with no configuration, one tab per participant.
+* Reads the Daml-LF from the participant itself, so templates and contracts show their real field names and types. No codegen.
+* Shows a contract together with its activity.
+* Also connects to a standalone ledger, read-only unless you allow writes.
 
-It can be used to allocate parties, create contracts, exercise choices and query ledger state without writing a Daml Script or application solely to populate a development ledger.
+![A contract and its activity](docs/images/workbench-contract-detail.png)
 
-For example, abridged from the script the Workbench writes for the Aviation test fixture:
+---
+
+## CaQL — the ledger in a few lines
+
+CaQL is Raposza's declarative ledger language. It allocates parties, creates contracts, exercises choices and queries with `WHERE`. You get repeatable fixtures, demos and experiments without writing a Daml Script or an application.
 
 ```
 trainee = ALLOCATE PARTY "Trainee";
 
 AS <maintenance control> QUERY Main:Defect WHERE grounded = true;
-
-defect = AS <maintenance control>
-    CREATE Main:Defect WITH { ... };
-
-withEvidence = AS <technician>
-    EXERCISE ON $defect AddEvidence WITH { "evidenceNew": ... };
 ```
-
-CaQL is intended for repeatable development fixtures, demonstrations, integration tests and ledger experimentation.
 
 ![CaQL on LocalNetND, Pharma fixture](docs/images/workbench-caql-pharma.png)
 
 ---
 
-## Snapshots
+## Why Raposza
 
-Sandbox can capture and restore complete local development environments.
-
-A snapshot allows you to return to a known ledger state instead of rebuilding the environment and replaying setup steps every time. A snapshot can only be restored by the version that took it.
-
-This is useful for:
-
-* reproducible demonstrations
-* test fixtures
-* debugging
-* regression testing
-* switching between development scenarios
+* **No containers.** Built for machines where Docker is unavailable, inconvenient or prohibited.
+* **Linux and Windows.** One Java 21 runtime, two application jars.
+* **Every organization's view.** Two organizations on two participants, each in its own tab, so you see exactly what each of them sees.
+* **Supported means tested.** Every capability is stated against the Canton versions it was run on.
+* **Open source.** Apache-2.0. Canton and Splice come from Digital Asset; Raposza does not redistribute them.
 
 ---
 
-## Multiple Canton versions
-
-Raposza is designed to work across multiple Canton/Daml versions rather than assuming a single installed SDK.
-
-The exact versions and capabilities that have been exercised are documented in [README_LONG_TIME.md](README_LONG_TIME.md).
-
-The distinction is deliberate: supported means tested, not merely expected to work.
-
----
-
-## Screenshots
+## More screenshots
 
 | Sandbox | Workbench |
 | --- | --- |
-| [![What the Sandbox starts](docs/images/sandbox-topology.png)](docs/images/sandbox-topology.png)<br>**Sandbox Simple** — what the Sandbox starts | [![A contract and its activity](docs/images/workbench-contract-detail.png)](docs/images/workbench-contract-detail.png)<br>**Workbench** — a contract and its activity |
-| [![The Aviation test fixture offered](docs/images/sandbox-fixture-prompt.png)](docs/images/sandbox-fixture-prompt.png)<br>**Test fixtures** — Aviation test fixture offered at startup | [![A template seen on the ledger](docs/images/workbench-template-detail.png)](docs/images/workbench-template-detail.png)<br>A template seen on the ledger |
-| [![DARs uploaded at start](docs/images/sandbox-dars.png)](docs/images/sandbox-dars.png)<br>**DAR management** — DARs uploaded at start | |
-| [![LocalNetND running](docs/images/sandbox-localnetnd-running.png)](docs/images/sandbox-localnetnd-running.png)<br>**LocalNetND** — a complete Splice LocalNet running without containers | |
+| [![What the Sandbox starts](docs/images/sandbox-topology.png)](docs/images/sandbox-topology.png)<br>Choose what to start | [![Connect to a local Sandbox](docs/images/workbench-connect.png)](docs/images/workbench-connect.png)<br>Connect to a local Sandbox |
+| [![The Aviation test fixture offered](docs/images/sandbox-fixture-prompt.png)](docs/images/sandbox-fixture-prompt.png)<br>Test data offered at start | [![A template seen on the ledger](docs/images/workbench-template-detail.png)](docs/images/workbench-template-detail.png)<br>A template as the ledger holds it |
+| [![DARs uploaded at start](docs/images/sandbox-dars.png)](docs/images/sandbox-dars.png)<br>DAR management | |
+| [![LocalNetND web UIs](docs/images/sandbox-oidc-web-uis.png)](docs/images/sandbox-oidc-web-uis.png)<br>The Splice web UIs, signed in | |
 
 ---
 
-## What Raposza is — and isn't
+## Get started
 
-Raposza is development and testing tooling around Canton and Splice.
-
-It does not replace Canton, Splice or Daml tooling supplied by their respective maintainers. It provides a development environment around them intended to make local execution, inspection, testing and experimentation easier.
-
-Raposza does not redistribute Canton or Splice.
-
----
-
-## More
-
-[README_LONG_TIME.md](README_LONG_TIME.md) contains the detailed documentation, including:
-
-* architecture
-* configuration
-* tested Canton/Daml versions
-* Splice compatibility
-* Sandbox capabilities
-* LocalNetND
-* Workbench
-* CaQL
-* known limitations
-
-Before you run it on a shared machine, read [SECURITY.md](SECURITY.md).
-
----
+* [FIRST_INSTALL.md](FIRST_INSTALL.md) — from a clean machine to a running Sandbox and Workbench, on Linux and Windows.
+* [BUILD_AND_INSTALL.md](BUILD_AND_INSTALL.md) — building from source.
+* [README_LONG_TIME.md](README_LONG_TIME.md) — architecture, tested versions and known limitations.
+* [SECURITY.md](SECURITY.md) — read this before running the Sandbox on a shared machine.
 
 ## License
 
-See [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

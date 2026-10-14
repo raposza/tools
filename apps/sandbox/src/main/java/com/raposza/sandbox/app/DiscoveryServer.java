@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.sandbox.app;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -10,6 +11,7 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
@@ -37,9 +39,19 @@ import java.util.function.Supplier;
  *
  * <h2>Read-only</h2>
  *
- * GET on `/` and nothing else. Anything that could START or STOP a stack is a
- * second way to drive the Sandbox with no authentication in front of it, and
- * the request was to publish what this one is.
+ * GET on `/` and on `/dars`, and nothing else. Anything that could START or
+ * STOP a stack is a second way to drive the Sandbox with no authentication in
+ * front of it, and the request was to publish what this one is. `/dars` adds
+ * nothing that writes - his words of 2026-10-07: "The Sandbox is a tool owned
+ * and operated by the user."
+ *
+ * <h2>`/dars` - the DARs described</h2>
+ *
+ * Every template, choice, field and type in the DARs the document lists. It
+ * decodes, so it takes a moment, and it is
+ * computed on the request's own thread from DAR FILES - never from a Swing
+ * component. TWO handler threads, so a description in progress never holds
+ * up `/`.
  *
  * <h2>A snapshot, not a callback</h2>
  *
@@ -52,8 +64,11 @@ import java.util.function.Supplier;
  */
 public final class DiscoveryServer {
 
-    /** The only path served. Anything else is 404. */
+    /** The document. */
     static final String STR_PATH = "/";
+
+    /** The description of the DARs the document lists. */
+    static final String STR_PATH_DARS = "/dars";
 
     static final String STR_METHOD = "GET";
 
@@ -66,6 +81,11 @@ public final class DiscoveryServer {
      * backlog worth tuning would mean something is wrong at the other end.
      */
     private static final int N_BACKLOG = 0;
+
+    /** One for `/`, one for a `/dars` that may take seconds. */
+    private static final int N_THREADS = 2;
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /**
      * How long {@link #stop} lets an in-flight exchange finish: NOT AT ALL.
@@ -85,6 +105,8 @@ public final class DiscoveryServer {
     private transient ExecutorService exec;
 
     private transient Supplier<DiscoveryDoc> supDoc;
+
+    private transient volatile Supplier<String> supDars;
 
     private int nPortBound;
 
@@ -122,7 +144,7 @@ public final class DiscoveryServer {
 
         HttpServer serverNew = HttpServer.create(
                 new InetSocketAddress(InetAddress.getLoopbackAddress(), nPortWanted), N_BACKLOG);
-        ExecutorService execNew = Executors.newSingleThreadExecutor(runnable -> {
+        ExecutorService execNew = Executors.newFixedThreadPool(N_THREADS, runnable -> {
             Thread thread = new Thread(runnable, STR_THREAD);
             // A DAEMON. The window disposes and the JVM exits; a live pool
             // thread here would hold it open with nothing on screen to say why.
@@ -137,6 +159,18 @@ public final class DiscoveryServer {
         this.exec = execNew;
         this.nPortBound = serverNew.getAddress().getPort();
         serverNew.start();
+    }
+
+
+    /**
+     * What `/dars` answers. Kept across a rebind: it belongs to the window,
+     * like the endpoint.
+     *
+     * @param supDarsNew asked on every `/dars` request, OFF the event thread,
+     *        for the JSON; null makes `/dars` a 404
+     */
+    public void useDars(Supplier<String> supDarsNew) {
+        this.supDars = supDarsNew;
     }
 
 
@@ -172,8 +206,13 @@ public final class DiscoveryServer {
                 respond(exchange, 405, "{\"error\":\"only GET\"}\n");
                 return;
             }
-            if (!STR_PATH.equals(exchange.getRequestURI().getPath())) {
-                respond(exchange, 404, "{\"error\":\"only /\"}\n");
+            String strPath = exchange.getRequestURI().getPath();
+            if (STR_PATH_DARS.equals(strPath)) {
+                handleDars(exchange);
+                return;
+            }
+            if (!STR_PATH.equals(strPath)) {
+                respond(exchange, 404, "{\"error\":\"only / and /dars\"}\n");
                 return;
             }
 
@@ -197,6 +236,29 @@ public final class DiscoveryServer {
         finally {
             exchange.close();
         }
+    }
+
+
+    private void handleDars(HttpExchange exchange) throws IOException {
+        Supplier<String> supHere = supDars;
+        if (supHere == null) {
+            respond(exchange, 404, "{\"error\":\"no DAR description here\"}\n");
+            return;
+        }
+        String strJson;
+        try {
+            strJson = supHere.get();
+        }
+        catch (RuntimeException ex) {
+            // THE REASON GOES BACK, unlike `/`: a description that fails does
+            // so for a cause the reader can act on - no Canton 3.5 installed,
+            // say - and a bare 500 would leave it guessing.
+            Map<String, String> mapErr = Map.of("error", "the DARs could not be described: "
+                    + ex.getMessage());
+            respond(exchange, 500, MAPPER.writeValueAsString(mapErr) + "\n");
+            return;
+        }
+        respond(exchange, 200, strJson.endsWith("\n") ? strJson : strJson + "\n");
     }
 
 

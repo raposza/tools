@@ -17,6 +17,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -120,6 +121,13 @@ public final class DarsLivePane extends JPanel {
     private final JButton btnUnvet = new JButton("Unvet");
 
     private final JLabel lblState = new JLabel(STR_IDLE);
+
+    /**
+     * The main package ids the participant listed at its last read - what the
+     * discovery document calls `uploaded`. Replaced whole, read off the event
+     * thread by nobody: the window reads it on the event thread too.
+     */
+    private transient Set<String> setPackageIdLive = Set.of();
 
     /** The admin API port of the running stack, or 0 when nothing is up. */
     private transient IntSupplier supplierPort = () -> 0;
@@ -303,11 +311,21 @@ public final class DarsLivePane extends JPanel {
     public void reset() {
         model.setColumnIdentifiers(new Object[] {"DAR", STR_COL_VETTED});
         model.setRowCount(0);
+        setPackageIdLive = Set.of();
         lblState.setText(STR_IDLE);
         // A STACK THAT HAS GONE DOWN leaves nothing to upload to - his
         // instruction, 2026-10-03: "The button Upload DAR should be disabled if
         // no participant is running."
         setInputEnabled(true);
+    }
+
+
+    /**
+     * @return the main package ids the participant listed at its last read;
+     *         empty before one and after a stop
+     */
+    public Set<String> setPackageIdLive() {
+        return setPackageIdLive;
     }
 
 
@@ -704,6 +722,12 @@ public final class DarsLivePane extends JPanel {
 
         model.setColumnIdentifiers(lstColumn.toArray());
         model.setRowCount(0);
+        Set<String> setLive = new HashSet<>();
+        for (String strPackageId : lstPackageId) {
+            if (strPackageId != null)
+                setLive.add(strPackageId);
+        }
+        setPackageIdLive = Set.copyOf(setLive);
         for (int idxDar = 0; idxDar < lstDar.size(); idxDar++) {
             Map<String, String> mapDar = lstDar.get(idxDar);
             Object[] arrCell = new Object[lstColumn.size()];

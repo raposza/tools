@@ -160,6 +160,9 @@ final class HelpDialog {
 
         Window winOwner = SwingUtilities.getWindowAncestor(compOwner);
         JDialog dlg = new JDialog(winOwner, strTitle, JDialog.ModalityType.MODELESS);
+        // ITS OWN ICON - his instruction, 2026-10-07, after LaunchDialog: a
+        // dialog with no icon images shows Java's in the task bar, owner or not.
+        AppIcon.apply(dlg);
 
         JEditorPane pane = new JEditorPane();
         pane.setContentType("text/html");

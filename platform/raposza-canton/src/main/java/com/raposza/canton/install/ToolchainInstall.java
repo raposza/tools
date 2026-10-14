@@ -229,7 +229,7 @@ public final class ToolchainInstall {
         if (dirWork == null)
             throw new IllegalArgumentException("a work directory is required");
 
-        Path fileDpm = roots.fileDpm();
+        Path fileDpm = fileDpmHere();
         if (fileDpm == null)
             fileDpm = fileInstallDpm(dirWork);
 
@@ -239,6 +239,25 @@ public final class ToolchainInstall {
         requireRuntime(version);
         say("Canton " + version + " installed");
         return version;
+    }
+
+
+    /**
+     * THE LAUNCHER ON PATH, OR UNDER THE ROOT - `todo.md` A-75. A DPM this
+     * window installed is under its root and not on this JVM's PATH, which is
+     * fixed when the process starts; without the second answer the next step
+     * would install DPM a second time.
+     *
+     * @return the DPM launcher, or null when there is none on this machine
+     */
+    private Path fileDpmHere() {
+        if (roots.fileDpm() != null)
+            return roots.fileDpm();
+        String strHere = ToolchainLauncher.strLauncher(ToolchainRoots.STR_NAME_DPM, roots,
+                platform.flagWindows());
+        if (strHere == null || strHere.equals(ToolchainRoots.STR_NAME_DPM))
+            return null;
+        return Path.of(strHere);
     }
 
 
@@ -278,10 +297,54 @@ public final class ToolchainInstall {
      * @throws IOException when any step fails
      */
     public Path fileInstallDpm(Path dirWork) throws IOException {
-        String strVersion = fetcher.strFetch(DpmBootstrap.STR_URL_LATEST);
-        if (strVersion.isEmpty())
-            throw new IOException("the latest-version endpoint answered nothing");
+        return fileInstallDpm(dirWork, strVersionLatest());
+    }
 
+
+    /**
+     * DPM AND NOTHING AFTER IT - the single-participant window's Install on a
+     * machine with no DPM, his instruction of 2026-10-13, `todo.md` A-75.
+     *
+     * The archive is named for the Daml SDK it carries - `dpm-3.6.0-...`
+     * brought SDK 3.6.0 on Windows, D-920 - so the version it was fetched
+     * under is the SDK the window then selects. No Canton is added beyond what
+     * the bootstrap installs, which is what {@link #versionInstallLatest} does
+     * differently.
+     *
+     * @param dirWork a directory this may write into
+     * @return the version the archive was published under, or null when that
+     *         text is not a three-part version
+     * @throws IOException when any step fails
+     */
+    public VersionId versionInstallDpm(Path dirWork) throws IOException {
+        if (dirWork == null)
+            throw new IllegalArgumentException("a work directory is required");
+
+        String strVersion = strVersionLatest();
+        fileInstallDpm(dirWork, strVersion);
+        return VersionId.tryParse(strVersion).orElse(null);
+    }
+
+
+    /**
+     * @return what the latest-version endpoint answers, trimmed
+     * @throws IOException when it answers nothing
+     */
+    private String strVersionLatest() throws IOException {
+        String strVersion = fetcher.strFetch(DpmBootstrap.STR_URL_LATEST);
+        if (strVersion == null || strVersion.trim().isEmpty())
+            throw new IOException("the latest-version endpoint answered nothing");
+        return strVersion.trim();
+    }
+
+
+    /**
+     * @param dirWork a directory this may write into
+     * @param strVersion the version to fetch, as the endpoint answered it
+     * @return the launcher inside the tree it installed from
+     * @throws IOException when any step fails
+     */
+    private Path fileInstallDpm(Path dirWork, String strVersion) throws IOException {
         say("installing DPM " + strVersion);
         Path dirUnpacked = dirUnpack(dirWork, DpmBootstrap.strArchive(strVersion, platform),
                 DpmBootstrap.strUrl(strVersion, platform));
@@ -339,7 +402,7 @@ public final class ToolchainInstall {
         if (dirWork == null)
             throw new IllegalArgumentException("a work directory is required");
 
-        Path fileDpm = roots.fileDpm();
+        Path fileDpm = fileDpmHere();
         if (fileDpm == null)
             return List.of();
 
@@ -421,7 +484,7 @@ public final class ToolchainInstall {
             throw new IllegalArgumentException("a version and a work directory are "
                     + "required");
 
-        Path fileDpm = roots.fileDpm();
+        Path fileDpm = fileDpmHere();
         if (fileDpm == null)
             fileDpm = fileInstallDpm(dirWork);
 

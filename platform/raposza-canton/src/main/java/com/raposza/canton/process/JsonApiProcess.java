@@ -21,15 +21,15 @@ import java.util.List;
  *
  * A 2.x Canton on this machine is found by the DAML assistant at
  * `~/.daml/sdk/&lt;version&gt;/canton`, and the SDK it belongs to puts its own jar
- * beside it at `~/.daml/sdk/&lt;version&gt;/daml-sdk/daml-sdk.jar`. That is the same
- * pair the CantonSandboxPqs prototype resolved from one `daml.dir` setting,
- * and it is a property of the assistant's layout rather than of any
+ * beside it at `~/.daml/sdk/&lt;version&gt;/daml-sdk/daml-sdk.jar`. Both resolve
+ * from the one SDK directory, and that is a property of the assistant's
+ * layout rather than of any
  * installation this workspace makes. A DPM-sourced install has no SDK beside
  * it and gets null.
  *
  * <h2>Readiness is a socket, not a line</h2>
  *
- * The prototype waited on a TCP port and this does the same. The wording of
+ * A TCP port that accepts a connection is the signal. The wording of
  * the server's own start-up line is a property of the SDK version and is not
  * banked anywhere in the inventory, so matching on it would be a guess that
  * fails silently by never firing; a port that accepts a connection is the same
@@ -41,7 +41,7 @@ public final class JsonApiProcess extends ManagedProcess {
 
     public static final String STR_NAME = "json-api";
 
-    /** What the prototype gave it, and it has never needed more. */
+    /** Enough for the 2.x JSON API, which has never needed more. */
     public static final int N_HEAP_MB_DEFAULT = 384;
 
     private static final String STR_REL_SDK_JAR = "daml-sdk/daml-sdk.jar";

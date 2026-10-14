@@ -131,6 +131,9 @@ class PharmaScriptTest {
         assertTrue(strOut.contains("CREATE USER \"kestrel-trainee\" WITH {"), strOut);
         assertTrue(strOut.contains("\"primaryParty\": \"$trainee\""), strOut);
         assertTrue(strOut.indexOf("participant_admin or superuser") < 0, strOut);
+        // THE ADMINISTRATIVE READS NAME participant_admin ALONE - superuser
+        // has no admin rights, his rule of 2026-10-13.
+        assertTrue(strOut.contains("-- User: participant_admin\nLIST PARTIES;\n"), strOut);
     }
 
 
@@ -151,6 +154,9 @@ class PharmaScriptTest {
         assertTrue(strOut.contains("\"shipmentNumber\": \"SHP-CAQL\""), strOut);
         assertTrue(strOut.contains("-- User: shipping or superuser"), strOut);
         assertTrue(strOut.contains("-- User: production or superuser"), strOut);
+        // THE ADMINISTRATIVE READS NAME participant_admin ALONE - superuser
+        // has no admin rights, his rule of 2026-10-13.
+        assertTrue(strOut.contains("-- User: participant_admin\nLIST PARTIES;\n"), strOut);
         assertTrue(strOut.indexOf("AS Kestrel-") < 0, strOut);
         // THE QUARANTINE IS THE PRODUCER'S ALONE and is named nowhere here.
         assertTrue(strOut.indexOf("QuarantineLot") < 0, strOut);
@@ -221,7 +227,7 @@ class PharmaScriptTest {
 
 
     @Test
-    void aLedgerWithoutTheAnchorStillGetsItsReads() {
+    void aLedgerWithoutTheAnchorStillGetsTheWholeScript() {
         List<LedgerSnapshot.TemplateGroup> lstNoReceipt = new ArrayList<>(lstTemplate());
         lstNoReceipt.removeIf(group -> "MaterialReceipt".equals(group.idTemplate()
                 .nameEntity()));
@@ -230,14 +236,21 @@ class PharmaScriptTest {
 
         assertTrue(strOut.contains("LIST PARTIES"), strOut);
         assertTrue(strOut.contains("QUERY Main:IncomingInspection"), strOut);
-        assertTrue(strOut.indexOf(" FETCH ") < 0, strOut);
-        assertTrue(strOut.indexOf("EXERCISE ") < 0, strOut);
+        // NOTHING LEFT OUT FOR WANT OF A CONTRACT - his instruction, 2026-10-13.
+        assertTrue(strOut.contains(" FETCH Main:MaterialReceipt\n"
+                + "    WHERE lotNumber = \"LOT-88213\" SINGLE;"), strOut);
+        assertTrue(strOut.contains("EXERCISE ON $receipt Inspect WITH {"), strOut);
+        assertTrue(strOut.contains("EXERCISE ON $inspection QuarantineLot"), strOut);
 
-        // The ROLES are the gate, so an empty read is still the fixture.
         String strEmpty = PharmaScript.strFor(lstSupplier(), List.of());
         assertTrue(strEmpty.contains("LIST PARTIES"), strEmpty);
-        assertTrue(strEmpty.indexOf("EXERCISE ") < 0, strEmpty);
-        // THE PAIR NEEDS NO CONTRACT and is there without the anchor.
+        assertTrue(strEmpty.contains(" FETCH Main:ProductionLot\n"
+                + "    WHERE lotNumber = \"LOT-88213\" SINGLE;"), strEmpty);
+        assertTrue(strEmpty.contains("EXERCISE ON $lot IssueCoa WITH {"), strEmpty);
+        assertTrue(strEmpty.contains("EXERCISE ON $coa Ship"), strEmpty);
+        // AND NO STARTER SAYS RUN RUNS ALL OF IT - the same instruction.
+        assertTrue(strOut.indexOf("Run runs all") < 0, strOut);
+        assertTrue(strEmpty.indexOf("Run runs all") < 0, strEmpty);
         assertTrue(strOut.contains("ALLOCATE PARTY \"Kestrel-Trainee\""), strOut);
         assertTrue(strEmpty.contains("ALLOCATE PARTY \"Vinterberg-Trainee\""), strEmpty);
     }

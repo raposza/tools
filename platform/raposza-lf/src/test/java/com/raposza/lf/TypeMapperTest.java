@@ -64,13 +64,23 @@ class TypeMapperTest {
 
     /**
      * Measured on the fixture: Deposit returns
-     * TApp(TBuiltin(BTContractId), TTyCon(Account)). PrimKind.CONTRACT_ID
-     * carries no template, so the argument is dropped deliberately.
+     * TApp(TBuiltin(BTContractId), TTyCon(Account)). The template is kept -
+     * it is what tells a reader of the type what the id points to.
      */
     @Test
-    void contractIdDropsItsTemplateArgument() {
+    void contractIdKeepsItsTemplateArgument() {
         Ast.Type type = Lf.app(Lf.prim("BTContractId"), Lf.con(ID_PKG, "Main", "Account"));
-        assertEquals(new DamlType.Prim(PrimKind.CONTRACT_ID), TypeMapper.map(type));
+        assertEquals(new DamlType.Prim(PrimKind.CONTRACT_ID,
+                new DamlType.Ref(new DataId(ID_PKG, "Main", "Account"))), TypeMapper.map(type));
+    }
+
+
+    /** "ContractId a" inside a parameterised record keeps its variable. */
+    @Test
+    void contractIdOfATypeVariableKeepsTheVariable() {
+        Ast.Type type = Lf.app(Lf.prim("BTContractId"), new Ast.TVar("a"));
+        assertEquals(new DamlType.Prim(PrimKind.CONTRACT_ID, new DamlType.Var("a")),
+                TypeMapper.map(type));
     }
 
 

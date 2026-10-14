@@ -51,8 +51,18 @@ class AviationOfferTest {
     @Test
     void anExistingDarIsOfferedRatherThanStagedSilently() {
         assertNull(AviationOffer.strWhyNot(true, "3.5.7", true));
-        // No compiler is needed to stage what is already built.
-        assertNull(AviationOffer.strWhyNot(true, null, true));
+    }
+
+
+    /**
+     * THE GATE IS A DAML SDK, BUILT OR NOT - his instruction of 2026-10-13,
+     * `todo.md` A-75. A DAR on disk on a machine with no SDK is not offered.
+     */
+    @Test
+    void noSdkIsNotAskedEvenWithTheDarBuilt() {
+        assertEquals(AviationOffer.STR_WHY_TOOLCHAIN, AviationOffer.strWhyNot(true, null, true));
+        assertFalse(AviationOffer.flagOffer(true, null, true));
+        assertEquals(AviationOffer.STR_WHY_SETTING, AviationOffer.strWhyNot(false, null, true));
     }
 
 

@@ -45,6 +45,10 @@ public final class LaunchDialog extends JDialog {
 
     private LaunchDialog(Window owner, String strTitle, String strBody) {
         super(owner, strTitle, ModalityType.MODELESS);
+        // ITS OWN ICON, not inherited - his report of 2026-10-07: with an owner
+        // the task bar still switched to Java's icon while the dialog was up.
+        // A window with no icon images gets the toolkit's default, owner or not.
+        AppIcon.apply(this);
 
         JTextArea area = new JTextArea(strBody, N_ROWS, N_COLUMNS);
         area.setEditable(false);
@@ -88,7 +92,15 @@ public final class LaunchDialog extends JDialog {
      *        can copy
      */
     public static void show(Component parent, String strTitle, String strBody) {
-        Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
+        // THE PARENT ITSELF WHEN IT IS A WINDOW. `getWindowAncestor` of a
+        // frame is the frame's OWN owner - null - so a dialog shown from the
+        // window had no owner: a top-level window of its own, with Java's icon
+        // in the task bar instead of the Sandbox's, and still displayable after
+        // the window closed, which kept the AWT threads - and the JVM - alive.
+        // Measured at his console 2026-10-07: jstack after the close showed
+        // AWT-EventQueue and AWT-Shutdown as the only non-daemon threads.
+        Window owner = parent instanceof Window ? (Window) parent
+                : parent == null ? null : SwingUtilities.getWindowAncestor(parent);
         LaunchDialog dialog = new LaunchDialog(owner, strTitle, strBody);
         dialog.setLocationRelativeTo(owner);
         dialog.setVisible(true);

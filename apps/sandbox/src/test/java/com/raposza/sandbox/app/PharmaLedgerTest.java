@@ -6,6 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.sun.net.httpserver.HttpServer;
 
 import org.junit.jupiter.api.Test;
 
@@ -95,6 +103,47 @@ class PharmaLedgerTest {
                 + PharmaLedger.STR_USER + "\",\"actAs\":[\"Alice::1220\"],\"commands\":["
                 + "{\"CreateCommand\":{}}]}}", strBody);
         assertEquals("participant_admin", PharmaLedger.STR_USER);
+    }
+
+    /**
+     * The grant and the revoke send the SAME body, and the revoke is a PATCH
+     * on the grant's path - the JSON Ledger API reference for
+     * `/v2/users/{user-id}/rights`. A revoke sent as POST would GRANT the
+     * party again, and this is what would see it.
+     */
+    @Test
+    void aRevokeIsAPatchWithTheGrantsBody() throws Exception {
+        List<String> lstSeen = new ArrayList<>();
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/v2/users/", exch -> {
+            String strBody = new String(exch.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8);
+            lstSeen.add(exch.getRequestMethod() + " " + exch.getRequestURI().getPath()
+                    + " " + strBody);
+            byte[] arrOut = "{}".getBytes(StandardCharsets.UTF_8);
+            exch.sendResponseHeaders(200, arrOut.length);
+            try (OutputStream out = exch.getResponseBody()) {
+                out.write(arrOut);
+            }
+        });
+        server.start();
+        try {
+            PharmaLedger ledger = new PharmaLedger("http://127.0.0.1:"
+                    + server.getAddress().getPort(), null);
+            ledger.grantActAs("participant_admin", "Alice::1220");
+            ledger.revokeActAs("participant_admin", "Alice::1220");
+        }
+        finally {
+            server.stop(0);
+        }
+
+        String strBody = "{\"userId\":\"participant_admin\",\"rights\":[{\"kind\":"
+                + "{\"CanActAs\":{\"value\":{\"party\":\"Alice::1220\"}}}}]}";
+        assertEquals(List.of(
+                "POST /v2/users/participant_admin/rights " + strBody,
+                "PATCH /v2/users/participant_admin/rights " + strBody), lstSeen);
+        assertEquals(strBody, PharmaLedger.strBodyRights("participant_admin", "Alice::1220"));
     }
 
 }

@@ -236,24 +236,9 @@ public final class CantonInstallations {
 
 
     /*
-     * THE ENTERPRISE COMPONENT IS DISCOVERED LIKE ANY OTHER. An operator
-     * decision, and it supersedes the refusal that used to live here as a
-     * warnEnterprise() guard.
-     *
-     * The refusal rested on a distinction that does not exist. Both editions
-     * ship the SAME three licence files - LICENSE, LICENSE-2.0.txt and
-     * LICENSE-DA.txt - so the presence of LICENSE-DA.txt in a jar says nothing
-     * about which edition it is, and it was the whole of the evidence.
-     *
-     * Acquisition is not this workspace's problem. Every binary here came from
-     * a PUBLIC OCI registry with no credentials, no entitlement check and no
-     * consent step. If a vendor publishes an artefact openly, the consequences
-     * of that publication are the vendor's. The operator is the professional
-     * carrying whatever exposure exists and has decided; a discovery routine is
-     * not the place to relitigate it, and an agent is not the party to decide
-     * it.
-     *
-     * DO NOT RE-ADD A LICENCE GUARD HERE. The question is not open.
+     * THE ENTERPRISE COMPONENT IS DISCOVERED LIKE ANY OTHER. Its edition is
+     * read from the runtime jar's Main-Class, with the component name as the
+     * fallback - see Edition.
      */
 
 

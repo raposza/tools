@@ -59,6 +59,25 @@ public final class ToolchainLauncher {
 
 
     /**
+     * WHETHER THE LAUNCHER IS ON THIS MACHINE AT ALL - on PATH, or under its
+     * root's `bin` - `todo.md` A-75.
+     *
+     * The second half is what makes this differ from
+     * {@link ToolchainRoots#flagDpm()}: a DPM the window has just installed is
+     * under its root and not yet on this JVM's PATH, which is fixed when the
+     * process starts.
+     *
+     * @param strName `daml` or `dpm`
+     * @return true when {@link #strLauncher(String)} resolves it to a file
+     *         rather than handing the bare name back
+     */
+    public static boolean flagFound(String strName) {
+        String strHere = strLauncher(strName);
+        return strHere != null && !strHere.equals(strName);
+    }
+
+
+    /**
      * Everything is an argument, so a Windows layout is answerable on a Linux
      * JVM and the other way round.
      *

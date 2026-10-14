@@ -56,6 +56,14 @@ import java.util.Map;
  * property of a stack, and `running: false` there is a true statement about
  * something that exists.
  *
+ * <h2>`dars` AND `snapshot` ARE WRITTEN STOPPED OR RUNNING</h2>
+ *
+ * His design of 2026-10-07: a DAR is `selected` before a start and
+ * `uploaded` once the participant has it, so the list means something while
+ * nothing runs - it is what the next start will carry. `snapshot` is written
+ * as null rather than omitted, so a reader never has to guess at a missing
+ * key.
+ *
  * <h2>Immutable, and built on the event thread</h2>
  *
  * Every field is a value the window read while it held the event thread. The
@@ -79,13 +87,17 @@ import java.util.Map;
  *        issuer, key set and token endpoint. May be null or empty
  * @param lstNode the nodes, in the order a consumer should read them; empty
  *        when nothing is running
+ * @param lstDar the DARs: selected for the next start, or on the participant
+ *        now; never null
+ * @param strSnapshot the snapshot the running stack was restored from, or
+ *        null when it started empty or nothing runs
  *
  * Author Claude/bentzn
  */
 public record DiscoveryDoc(String strState, int nPortDiscovery, String strTopology,
         String strVersion, String strEdition, Path dirRun, Path fileLog,
         boolean flagProvider, String strProviderMode, Map<String, Object> mapProvider,
-        List<DiscoveryNode> lstNode) {
+        List<DiscoveryNode> lstNode, List<DiscoveryDar> lstDar, String strSnapshot) {
 
     /**
      * COPIED AND MADE UNMODIFIABLE. A record holding a collection the caller
@@ -97,6 +109,21 @@ public record DiscoveryDoc(String strState, int nPortDiscovery, String strTopolo
                 : Collections.unmodifiableMap(new LinkedHashMap<>(mapProvider));
         lstNode = lstNode == null ? List.of()
                 : Collections.unmodifiableList(new ArrayList<>(lstNode));
+        lstDar = lstDar == null ? List.of()
+                : Collections.unmodifiableList(new ArrayList<>(lstDar));
+    }
+
+
+    /**
+     * The document with no DARs and no snapshot - what every caller wrote
+     * before 2026-10-07.
+     */
+    public DiscoveryDoc(String strState, int nPortDiscovery, String strTopology,
+            String strVersion, String strEdition, Path dirRun, Path fileLog,
+            boolean flagProvider, String strProviderMode, Map<String, Object> mapProvider,
+            List<DiscoveryNode> lstNode) {
+        this(strState, nPortDiscovery, strTopology, strVersion, strEdition, dirRun, fileLog,
+                flagProvider, strProviderMode, mapProvider, lstNode, List.of(), null);
     }
 
 
@@ -136,6 +163,10 @@ public record DiscoveryDoc(String strState, int nPortDiscovery, String strTopolo
     public static final String STR_KEY_OIDC = "oidc";
 
     public static final String STR_KEY_NODES = "nodes";
+
+    public static final String STR_KEY_DARS = "dars";
+
+    public static final String STR_KEY_SNAPSHOT = "snapshot";
 
     /**
      * WHOSE PROVIDER IT IS, and the one thing a consumer cannot infer from the
@@ -196,6 +227,14 @@ public record DiscoveryDoc(String strState, int nPortDiscovery, String strTopolo
         if (mapProvider != null)
             mapOidc.putAll(mapProvider);
         mapOut.put(STR_KEY_OIDC, mapOidc);
+
+        // STOPPED OR RUNNING - 2026-10-07. See the class.
+        List<Map<String, Object>> lstDarOut = new ArrayList<>();
+        for (DiscoveryDar dar : lstDar) {
+            lstDarOut.add(dar.map());
+        }
+        mapOut.put(STR_KEY_DARS, lstDarOut);
+        mapOut.put(STR_KEY_SNAPSHOT, flagRunning() ? strSnapshot : null);
 
         // NOTHING ABOUT A STACK UNLESS THERE IS ONE - operator instruction,
         // 2026-08-22. These describe what the window is POINTED AT, and a

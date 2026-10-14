@@ -25,7 +25,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.5.0</version>
+        <version>0.6.0</version>
     </parent>
 
     <artifactId>raposza-canton</artifactId>
@@ -55,6 +55,17 @@
         <dependency>
             <groupId>com.raposza</groupId>
             <artifactId>raposza-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Arrived with dar/DarDescriber. It takes the Daml-LF decoder as
+             the SPI's LfDecoder_i and describes the PackageShape it returns,
+             so it needs the interface and the model and NOT the decoder:
+             no reader, no Scala, nothing S-1 refuses. Which decoder - the
+             build's or an installed Canton's through LfReaderLoader - is the
+             caller's choice. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-spi</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- The install package brought

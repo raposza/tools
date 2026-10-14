@@ -408,6 +408,44 @@ class ToolchainInstallTest {
     }
 
 
+    /**
+     * DPM AND NOTHING AFTER IT - `todo.md` A-75: the unpack and the bootstrap,
+     * no tag listing and no component, and the version the archive was
+     * published under handed back for the window to select.
+     */
+    @Test
+    void aDpmOnlyInstallIsTheBootstrapAndReturnsItsVersion() throws IOException {
+        VersionId version = install("3.6.0", rootsBare(dirTemp), HostPlatform.LINUX_X64)
+                .versionInstallDpm(dirTemp.resolve("work"));
+
+        assertEquals(VersionId.of(3, 6, 0), version);
+        assertEquals(List.of(DpmBootstrap.STR_URL_LATEST,
+                DpmBootstrap.strUrl("3.6.0", HostPlatform.LINUX_X64)), lstFetched);
+        assertEquals(2, lstRun.size());
+        assertEquals("tar", lstRun.get(0).get(0));
+        assertEquals("bootstrap", lstRun.get(1).get(1));
+    }
+
+
+    /**
+     * A DPM UNDER ITS ROOT AND NOT ON PATH IS USED - `todo.md` A-75. That is
+     * a DPM this window installed earlier in the same process, and without
+     * this the next install fetched DPM again.
+     */
+    @Test
+    void aDpmUnderItsRootIsUsedRatherThanReinstalled() throws IOException {
+        Path fileDpm = dirTemp.resolve(".dpm").resolve("bin").resolve("dpm");
+        Files.createDirectories(fileDpm.getParent());
+        Files.writeString(fileDpm, "#!/bin/sh\n");
+
+        install("3.5.7", rootsBare(dirTemp), HostPlatform.LINUX_X64)
+                .versionInstallLatest(dirTemp.resolve("work"));
+
+        assertTrue(lstFetched.isEmpty(), lstFetched.toString());
+        assertEquals(fileDpm.toString(), lstRun.get(0).get(0));
+    }
+
+
     /** The same add with its jar landed is an install, and says so. */
     @Test
     void anAddWhoseJarLandedSaysInstalled() throws IOException {

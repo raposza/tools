@@ -85,6 +85,20 @@ class JsonCoercerSubstTest {
     }
 
 
+    /**
+     * $acct was bound by a CaQL statement, which knows the id and not the
+     * template; the field names the template. Same value, same type.
+     */
+    @Test
+    void aBareContractIdFillsAFieldThatNamesItsTemplate() throws Exception {
+        DamlType typeField = new DamlType.Prim(PrimKind.CONTRACT_ID, new DamlType.Ref(ID_ACCOUNT));
+
+        assertEquals(VAL_CID, coercer().coerce(json("\"$acct\""), typeField));
+        assertEquals(new DamlValue.Lst(List.of(VAL_CID)),
+                coercer().coerce(json("[\"$acct\"]"), new DamlType.ListOf(typeField)));
+    }
+
+
     /** A Numeric of the wrong scale is a different type and is refused too. */
     @Test
     void numericScaleIsPartOfTheTypeMatch() throws Exception {

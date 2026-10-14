@@ -258,10 +258,40 @@ public final class PharmaLedger {
      */
     public void grantActAs(String strUser, String strParty)
             throws IOException, InterruptedException {
-        String strBody = "{\"userId\":" + PharmaStory.strJson(strUser)
-                + ",\"rights\":[" + strRight("CanActAs", strParty) + "]}";
         strPost("/v2/users/" + strUser + "/rights",
-                strBody.getBytes(StandardCharsets.UTF_8), "application/json", N_SECONDS_CALL);
+                strBodyRights(strUser, strParty).getBytes(StandardCharsets.UTF_8),
+                "application/json", N_SECONDS_CALL);
+    }
+
+
+    /**
+     * Takes one party back from a user - {@link #grantActAs} undone.
+     *
+     * PATCH ON THE SAME PATH, THE SAME BODY. The JSON Ledger API reference,
+     * `/v2/users/{user-id}/rights`: PATCH "Remove the rights from the set of
+     * rights granted to the user", with `userId` and `rights` as the grant
+     * takes them, and the answer names what was newly revoked.
+     *
+     * @param strUser the user
+     * @param strParty the party it may no longer submit as
+     * @throws IOException when the participant refuses
+     * @throws InterruptedException when the call is interrupted
+     */
+    public void revokeActAs(String strUser, String strParty)
+            throws IOException, InterruptedException {
+        strPatch("/v2/users/" + strUser + "/rights",
+                strBodyRights(strUser, strParty).getBytes(StandardCharsets.UTF_8));
+    }
+
+
+    /**
+     * @param strUser the user, which goes in the body as well as the path
+     * @param strParty the one party the right is over
+     * @return the body a grant and a revoke both take
+     */
+    static String strBodyRights(String strUser, String strParty) {
+        return "{\"userId\":" + PharmaStory.strJson(strUser)
+                + ",\"rights\":[" + strRight("CanActAs", strParty) + "]}";
     }
 
 
@@ -400,6 +430,16 @@ public final class PharmaLedger {
                 .header("Content-Type", strType)
                 .timeout(Duration.ofSeconds(nSeconds))
                 .POST(HttpRequest.BodyPublishers.ofByteArray(arrBody));
+        return strSend(bld);
+    }
+
+
+    private String strPatch(String strPath, byte[] arrBody)
+            throws IOException, InterruptedException {
+        HttpRequest.Builder bld = HttpRequest.newBuilder(URI.create(strBase + strPath))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(N_SECONDS_CALL))
+                .method("PATCH", HttpRequest.BodyPublishers.ofByteArray(arrBody));
         return strSend(bld);
     }
 

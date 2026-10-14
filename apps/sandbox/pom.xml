@@ -17,7 +17,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.5.0</version>
+        <version>0.6.0</version>
         <relativePath>../../platform/pom.xml</relativePath>
     </parent>
 
@@ -45,6 +45,22 @@
             <groupId>com.raposza</groupId>
             <artifactId>raposza-canton</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <!-- Arrived with GET /dars, 2026-10-07: LfReaderLoader
+             and the decoder it loads. WITHOUT ITS READER, and the exclusion is
+             the point: the Daml-LF reader, Scala and the rest come from the
+             installed Canton's own jar at run time, in a classloader of their
+             own, so none of it enters this jar and S-1 is untouched. -->
+        <dependency>
+            <groupId>com.raposza</groupId>
+            <artifactId>raposza-lf</artifactId>
+            <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.daml</groupId>
+                    <artifactId>daml-lf-archive-reader_2.13</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <!-- RAWAR, the RAposza Web ARchive: RawarSites reads a RAWAR's
              descriptor and name rules from it - rawar.md section 5. -->

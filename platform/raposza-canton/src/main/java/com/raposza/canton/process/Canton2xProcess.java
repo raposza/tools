@@ -25,8 +25,8 @@ import java.util.List;
  * has started.
  *
  * Readiness is the bootstrap's OWN sentinel, and this is the one place the 2.x
- * launcher is better than the 3.x one. The prototype this was ported from also
- * accepted four log greps, one of them the Canton banner - which is printed
+ * launcher is better than the 3.x one. A log grep is not readiness: the
+ * Canton banner, for one, is printed
  * before the domain starts, before the participant connects and before any DAR
  * is uploaded. A stack reported ready there is ready in name only, and the
  * first client call fails wearing a disguise. Only the sentinel and the

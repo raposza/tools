@@ -29,10 +29,11 @@ import java.util.List;
  * parameterised type keeps its application: "Box Text" is
  * App(Ref(Main:Box), [Prim(TEXT)]).
  *
- * ContractId LOSES its argument. PrimKind.CONTRACT_ID carries no template, and
- * inventing a place for it here would widen the model on behalf of a value
- * that renders as a string either way. If that becomes wrong, it is a finding
- * about the model and the model changes - not this file.
+ * ContractId KEEPS its argument, as Prim(CONTRACT_ID, typeArg). It was dropped
+ * until 2026-10-07, on the grounds that the value renders as a string either
+ * way; the Sandbox's DAR description then showed every contract id as a bare
+ * "ContractId", with nothing to say which template it points to. The model
+ * changed - DamlType.Prim - and this file follows it.
  *
  * An unmappable type THROWS rather than degrading. Only serializable data
  * types are mapped (see AstMapper), and a serializable type that this cannot
@@ -114,8 +115,10 @@ public final class TypeMapper {
             case "BTParty":
                 return prim(PrimKind.PARTY, nameBt, lstArg, 0, typeWhole);
             case "BTContractId":
-                // Argument deliberately dropped; see the type comment.
-                return prim(PrimKind.CONTRACT_ID, nameBt, lstArg, 1, typeWhole);
+                prim(PrimKind.CONTRACT_ID, nameBt, lstArg, 1, typeWhole);
+                if (lstArg.isEmpty())
+                    return new DamlType.Prim(PrimKind.CONTRACT_ID);
+                return new DamlType.Prim(PrimKind.CONTRACT_ID, map(lstArg.get(0)));
             case "BTNumeric":
                 return numeric(lstArg, typeWhole);
             case "BTList":

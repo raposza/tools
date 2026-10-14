@@ -11,8 +11,10 @@ import com.raposza.canton.install.SdkOffers;
 import com.raposza.canton.install.SpliceAcquire;
 import com.raposza.canton.install.ToolchainAdvice;
 import com.raposza.canton.install.ToolchainInstall;
+import com.raposza.canton.install.ToolchainLauncher;
 import com.raposza.canton.install.ToolchainRoots;
 import com.raposza.canton.install.VersionId;
+import com.raposza.canton.jdbc.PgShim;
 import com.raposza.canton.process.CantonProcess;
 import com.raposza.canton.pqs.PqsOAuth;
 import com.raposza.canton.pqs.PqsSpec;
@@ -37,6 +39,8 @@ import com.raposza.sandbox.app.LocalNetPqs;
 import com.raposza.sandbox.app.MintRegistration;
 import com.raposza.sandbox.app.PqsLog;
 import com.raposza.sandbox.app.AuthSettings;
+import com.raposza.sandbox.app.DarDescription;
+import com.raposza.sandbox.app.DiscoveryDar;
 import com.raposza.sandbox.app.DiscoveryDoc;
 import com.raposza.sandbox.app.DiscoveryNode;
 import com.raposza.sandbox.app.DiscoveryServer;
@@ -76,6 +80,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -208,8 +213,8 @@ public final class SandboxWindow extends JFrame {
             + " serves it on port.json-api; absent on 2.x until the JSON API tab's"
             + " note is resolved. The v2 endpoint paths are not banked in the"
             + " inventory, so they would be guessed.\n\n"
-            + "(b) Canton's own schema, over JDBC, which is what the CantonSandboxPqs"
-            + " prototype did. It works on 2.10 - participant_events_create minus"
+            + "(b) Canton's own schema, over JDBC. It works on 2.10 -"
+            + " participant_events_create minus"
             + " participant_events_consuming_exercise, with template ids resolved"
             + " through ledger_api.string_interning - and that layout is 2.10's."
             + " Nothing in the corpus measures the 3.x internal schema.\n\n"
@@ -250,14 +255,19 @@ public final class SandboxWindow extends JFrame {
 
     private final SandboxForm form;
 
+    /** Under the state root; see {@link #dirLocalNetShim()}. */
+    private static final String STR_DIR_LOCALNET_SHIM = "localnet";
+
     /**
-     * What a single-participant window says when this machine has neither a
-     * Daml Assistant nor DPM - the operator's words, 2026-09-26. Nothing is
-     * offered for install there: the catalogue a clean machine can see stops
-     * at 3.4.11 and reads as outdated.
+     * What Install asks on a machine with no DPM - his words, 2026-10-13,
+     * `todo.md` A-75: "When the user clicks 'Install' a dialog with 'Install
+     * DPM?' opens." It replaces the notice a machine with no toolchain was
+     * shown at open, which is gone: the SDK box is simply empty.
      */
-    public static final String STR_NO_TOOLCHAIN =
-            "Please install DPM (DAML >= 3.5.4) and/or DAML Assistant (DAML <= 3.4.11).";
+    public static final String STR_OFFER_DPM = "Install DPM?";
+
+    /** A DPM install is running - {@link #installDpmRequested}. */
+    private volatile boolean flagDpmInstalling;
 
     /** Hidden unless this machine has nothing to start - LocalNetND only. */
     private final ToolchainBanner banner = new ToolchainBanner();
@@ -372,6 +382,12 @@ public final class SandboxWindow extends JFrame {
      */
     private transient String strFoundingTried;
 
+    /**
+     * The LocalNetND key the Settings tab was last shown for, so that a move
+     * to another network is told apart from the same one read again.
+     */
+    private transient String strKeyLocalNetShown;
+
     /** Whose profile the fields currently hold, or null for none. */
     private transient CantonInstallation installProfile;
 
@@ -459,6 +475,17 @@ public final class SandboxWindow extends JFrame {
      */
     private final transient Map<String, DarsLivePane> mapDarsLocal = new LinkedHashMap<>();
 
+    /** The DARs the discovery document lists, their manifests read once. */
+    private final transient DarsListing darsListing = new DarsListing();
+
+    /**
+     * What `GET /dars` describes: the DARs and the topology of the last
+     * document, set on the event thread and read on the endpoint's.
+     */
+    private transient volatile List<DiscoveryDar> lstDarPublished = List.of();
+
+    private transient volatile String strTopologyPublished = DiscoveryDoc.STR_TOPOLOGY_SANDBOX;
+
     /**
      * The Web tab: every page this window serves - LocalNetND's UIs, each
      * participant's JSON Ledger API and the RAWARs - with its node and URL.
@@ -531,6 +558,18 @@ public final class SandboxWindow extends JFrame {
     private long nNanoStart;
 
     private static final String STR_FOOTER_RUNNING = "Running";
+
+    /**
+     * RUNNING, AND NOT YET READY TO SAVE - his instruction, 2026-10-13: "let
+     * the user know that the Sandbox is 'Running' before all data in
+     * Aviation/Pharma has been created. So Save snapshot should wait." The
+     * footer says this until the fixture's own done line replaces it.
+     */
+    private static final String STR_FOOTER_AVIATION =
+            "Running - creating the Aviation test data; Save snapshot waits for it";
+
+    private static final String STR_FOOTER_PHARMA =
+            "Running - creating the Pharma test data; Save snapshot waits for it";
 
     /** The end of the fixture, and the end of the whole opening sequence. */
     private static final String STR_AVIATION_DONE = "Aviation data created, system running";
@@ -888,6 +927,7 @@ public final class SandboxWindow extends JFrame {
             if (tabs.getSelectedComponent() == paneWeb)
                 webRefresh();
         });
+        // SETTINGS stays last on both topologies.
         tabs.addTab("Settings", paneSettings);
 
         lblFooter.setForeground(GuiTheme.colMuted());
@@ -999,6 +1039,9 @@ public final class SandboxWindow extends JFrame {
         paneDarsLive.useNoteSink(this::milestone);
         paneDarsLive.useDarDirectory(() -> form.run().dirDars());
         paneDarsLive.useDarStore(() -> form.run().dirDars());
+        // `/dars`, 2026-10-07: the DARs the last document listed, described
+        // on the endpoint's thread from the files alone.
+        discovery.useDars(() -> DarDescription.strJson(strTopologyPublished, lstDarPublished));
         for (Map.Entry<String, DarsLivePane> entry : mapDarsLocal.entrySet()) {
             String strRole = entry.getKey();
             entry.getValue().useAdminPort(() -> nPortAdminLocal(strRole));
@@ -1224,7 +1267,13 @@ public final class SandboxWindow extends JFrame {
             String strLine = !strStage.isEmpty() ? strStage + strWhy
                     : ex instanceof ConnectException ? "waiting for the OIDC server to answer"
                             : "the OIDC server's users could not be read - " + strWhy;
-            boolean flagMilestone = !strStage.isEmpty() && !strLine.equals(strUsersFailLast);
+            // A FAILURE THE STACK OUTRAN IS NOT A FAILURE. The founding pass
+            // starts the stack and stops it again at once, so the write asked
+            // for at RUNNING meets a provider or a participant already going
+            // down - ConnectException, 2026-10-12. The next start writes every
+            // user again, so only a read whose state still holds is reported.
+            boolean flagMilestone = !strStage.isEmpty() && !strLine.equals(strUsersFailLast)
+                    && nEpoch == cntUsersEpoch.get();
             strUsersFailLast = strLine;
             SwingUtilities.invokeLater(() -> {
                 paneUsers.state(strLine);
@@ -1466,6 +1515,11 @@ public final class SandboxWindow extends JFrame {
                         JwtMintProcess.strUrlJwks(), paneJwt.strUrlTokenFor(strUser),
                         paneJwt.mapOidcFor(strUser), reportHere));
 
+        List<DiscoveryDar> lstDar = darsListing.lstOf(paneDars.lstFileAll(),
+                new HashSet<>(paneDars.lstFileSelected()),
+                flagUp ? paneDarsLive.setPackageIdLive() : Set.of());
+        publishDars(DiscoveryDoc.STR_TOPOLOGY_SANDBOX, lstDar);
+
         return new DiscoveryDoc(stateNow.name(), discovery.nPort(),
                 DiscoveryDoc.STR_TOPOLOGY_SANDBOX,
                 inst == null ? null : inst.version().toString(),
@@ -1474,7 +1528,8 @@ public final class SandboxWindow extends JFrame {
                 paneJwt.isMintRunning(),
                 JwtMintProcess.isExternal() ? DiscoveryDoc.STR_MODE_EXTERNAL
                         : DiscoveryDoc.STR_MODE_EMBEDDED,
-                JwtMintProcess.mapProvider(), lstNode);
+                JwtMintProcess.mapProvider(), lstNode, lstDar,
+                flagUp ? strSnapshotRunning : null);
     }
 
 
@@ -1537,6 +1592,18 @@ public final class SandboxWindow extends JFrame {
             }
         }
 
+        // ONE STORE FOR THE THREE PARTICIPANTS. A DAR is listed when one of them
+        // has it.
+        Set<String> setLive = new HashSet<>();
+        if (flagUp) {
+            for (DarsLivePane paneRole : mapDarsLocal.values()) {
+                setLive.addAll(paneRole.setPackageIdLive());
+            }
+        }
+        List<DiscoveryDar> lstDar = darsListing.lstOf(DarsListing.lstDarsIn(dirDarsLocal()),
+                List.of(), setLive);
+        publishDars(DiscoveryDoc.STR_TOPOLOGY_LOCALNET, lstDar);
+
         return new DiscoveryDoc(stateNow.name(), discovery.nPort(),
                 DiscoveryDoc.STR_TOPOLOGY_LOCALNET,
                 instStock == null ? null : instStock.version().toString(),
@@ -1545,7 +1612,20 @@ public final class SandboxWindow extends JFrame {
                 paneJwt.isMintRunning(),
                 JwtMintProcess.isExternal() ? DiscoveryDoc.STR_MODE_EXTERNAL
                         : DiscoveryDoc.STR_MODE_EMBEDDED,
-                JwtMintProcess.mapProvider(), List.copyOf(lstNode));
+                JwtMintProcess.mapProvider(), List.copyOf(lstNode), lstDar,
+                flagUp ? strSnapshotRunning : null);
+    }
+
+
+    /**
+     * What `GET /dars` describes from now on. Called on the event thread.
+     *
+     * @param strTopology the document's topology
+     * @param lstDar the document's DARs
+     */
+    private void publishDars(String strTopology, List<DiscoveryDar> lstDar) {
+        this.strTopologyPublished = strTopology;
+        this.lstDarPublished = List.copyOf(lstDar);
     }
 
 
@@ -1572,6 +1652,17 @@ public final class SandboxWindow extends JFrame {
             strFoundingTried = null;
             refreshFoundingState();
             refreshSnapshots();
+            // ANOTHER NETWORK, ANOTHER STORY - his finding, 2026-10-13: Pharma
+            // ran on Splice 0.9.1, 0.8.3 was installed and selected without
+            // closing the window, and `Create Pharma test data` stayed off. The
+            // run belongs to the network it went onto, and the box only moves
+            // while the stack is stopped.
+            String strKeyNow = strKeyLocalNet();
+            if (!Objects.equals(strKeyNow, strKeyLocalNetShown)) {
+                strKeyLocalNetShown = strKeyNow;
+                pharma.forgetRun();
+                applyControls(stateNow);
+            }
         }
         boolean flagFirst = flagFirstSelect;
         if (!flagFirst && Objects.equals(installProfile, instNew))
@@ -2358,29 +2449,110 @@ public final class SandboxWindow extends JFrame {
      */
     private void refreshBanner() {
         // NOT ON THE SINGLE-PARTICIPANT WINDOW - the operator's instruction of
-        // 2026-09-26. There a machine without a toolchain gets STR_NO_TOOLCHAIN
-        // and no install is offered.
+        // 2026-09-26. There a machine without DPM is offered it by Install -
+        // `todo.md` A-75.
         banner.setOffered(isLocalNet() && ToolchainAdvice.flagOffer(ToolchainRoots.ofDefaults(),
                 SandboxService.lstCanton()));
     }
 
 
     /**
-     * @return whether a Daml Assistant or DPM launcher is on PATH
+     * DPM, ON A THREAD OF ITS OWN, and then the SDK it brought selected -
+     * `todo.md` A-75. The reasons {@link #installToolchain} runs off the event
+     * thread hold here unchanged: an archive of about a gigabyte on Windows,
+     * D-920.
      */
-    private static boolean hasToolchain() {
-        ToolchainRoots roots = ToolchainRoots.ofDefaults();
-        return roots.flagDaml() || roots.flagDpm();
+    private void installDpmRequested() {
+        if (flagDpmInstalling)
+            return;
+        this.flagDpmInstalling = true;
+        applyControls(stateNow);
+        logMain.append("Installing DPM.");
+        tabs.setSelectedIndex(0);
+
+        Thread threadInstall = new Thread(() -> {
+            try {
+                // THE FIGURE REWRITES ONE LINE, as the LocalNetND banner's
+                // install shows its own.
+                ToolchainInstall install = ToolchainInstall.ofDefaults(
+                        HostPlatform.ofDefaults(), ToolchainRoots.ofDefaults(),
+                        dirInstallWork(), logMain::append, logMain::replaceSpinning, null);
+                VersionId version = install.versionInstallDpm(dirInstallWork());
+                SwingUtilities.invokeLater(() -> installDpmDone(version, null));
+            }
+            catch (IOException | RuntimeException ex) {
+                SwingUtilities.invokeLater(() -> installDpmDone(null,
+                        String.valueOf(ex.getMessage())));
+            }
+        }, "raposza-dpm-install");
+        threadInstall.setDaemon(true);
+        threadInstall.start();
     }
 
 
     /**
-     * The single-participant window at open: the notice when there is no
-     * toolchain, then the Aviation offer as before.
+     * Reads the machine again and selects the SDK DPM came with.
+     *
+     * @param versionSdk the version the DPM archive was published under, or
+     *        null when the install failed or the version did not parse
+     * @param strError why it failed, or null when it did not
+     */
+    private void installDpmDone(VersionId versionSdk, String strError) {
+        this.flagDpmInstalling = false;
+        applyControls(stateNow);
+        if (strError != null) {
+            logMain.append("Install FAILED: " + strError);
+            footerNotice("Install failed");
+            return;
+        }
+
+        // THE FORM READS THE MACHINE AGAIN - installToolchainDone's reason.
+        form.rescan(null);
+        CantonInstallation instSdk = instForSdk(versionSdk);
+        if (instSdk != null)
+            form.select(instSdk);
+        String strSdk = versionSdk == null ? "" : " with DAML SDK " + versionSdk;
+        logMain.append("Installed DPM" + strSdk + (instSdk != null ? ", selected."
+                : versionSdk == null ? "." : " - no installed Canton of it to select."));
+        footerNotice("Installed DPM" + strSdk);
+    }
+
+
+    /**
+     * THE DEFAULT SDK IS THE ONE DPM CAME WITH - his words, 2026-10-13: "When
+     * downloading DPM yesterday it came with DAML SDK 3.6.0. That is what I
+     * called 'default'." The box lists Cantons, so the SDK is matched through
+     * the bundle manifests on this machine, and a Canton of the same number
+     * where no manifest names one.
+     *
+     * @param versionSdk the SDK, or null
+     * @return the startable installation that SDK brings, or null
+     */
+    private CantonInstallation instForSdk(VersionId versionSdk) {
+        if (versionSdk == null)
+            return null;
+        String strSdk = versionSdk.toString();
+        Map<String, String> mapBundle = DpmBundles.mapBundle(
+                DpmBundles.dirSdk(ToolchainRoots.ofDefaults()));
+        CantonInstallation instSame = null;
+        for (CantonInstallation inst : form.lstStartable()) {
+            String strCanton = inst.version().toString();
+            if (strSdk.equals(mapBundle.get(strCanton)))
+                return inst;
+            if (instSame == null && strSdk.equals(strCanton))
+                instSame = inst;
+        }
+        return instSame;
+    }
+
+
+    /**
+     * The single-participant window at open: the Aviation offer, and nothing
+     * else. NO NOTICE WITHOUT A TOOLCHAIN - his instruction, 2026-10-13,
+     * `todo.md` A-75: "This should not be displayed. Instead: The SDK remains
+     * empty." Install is where DPM is offered.
      */
     private void openSingle() {
-        if (!hasToolchain())
-            Modals.inform(this, STR_NO_TOOLCHAIN, "Raposza Sandbox");
         offerAviation();
     }
 
@@ -2571,7 +2743,14 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
+        // BUSY FROM HERE UNTIL aviationDone - his finding, 2026-10-13: Save
+        // snapshot was enabled while the data was still being created. The
+        // founding pass's stop clears the flag aviationBegun set, so the
+        // start that runs the scripts has to set it again, as Pharma's does.
+        this.flagAviationBusy = true;
+        applyControls(stateNow);
         milestone(AviationSession.STR_PHASE);
+        footerSettles(STR_FOOTER_AVIATION);
         aviation.run(form.auth(), instNow.version(), nPortLedger, this::aviationDone);
     }
 
@@ -2713,6 +2892,7 @@ public final class SandboxWindow extends JFrame {
         lamps.setFixtureShown(true);
         lamps.setFixtureHealth(SandboxService.Health.STARTING);
         milestone(PharmaSession.STR_PHASE);
+        footerSettles(STR_FOOTER_PHARMA);
         // THE SAME NUMBERING THE RUNNER WAS GIVEN - `portsLocalNet`. A literal
         // here would address ports the stack does not bind the day the
         // setting moves.
@@ -2810,8 +2990,19 @@ public final class SandboxWindow extends JFrame {
             installSpliceRequested();
             return;
         }
-        if (!hasToolchain()) {
-            Modals.inform(this, STR_NO_TOOLCHAIN, "Raposza Sandbox");
+        // NO DPM: THE INSTALL OFFERS DPM - his instruction, 2026-10-13,
+        // `todo.md` A-75: "If user clicks 'Install', offer to download and
+        // install DPM, auto select the default DAML SDK version after install".
+        // DPM ONLY - his words, the same day: "Sandbox will only assist on
+        // installing DPM. Not DAML Assistant." Declined, nothing is offered.
+        // Found on PATH or under its root, so a DPM this window has just
+        // installed is not offered again.
+        if (flagDpmInstalling)
+            return;
+        if (!ToolchainLauncher.flagFound(ToolchainRoots.STR_NAME_DPM)) {
+            if (Modals.isConfirmed(this, STR_OFFER_DPM, "Raposza Sandbox",
+                    JOptionPane.QUESTION_MESSAGE))
+                installDpmRequested();
             return;
         }
         // WHICH CANTON A BUNDLE BRINGS, off the manifests of the bundles on this
@@ -2945,6 +3136,18 @@ public final class SandboxWindow extends JFrame {
 
     private static Path dirInstallWork() {
         return RaposzaSettings.current().dirHome().resolve("install");
+    }
+
+
+    /**
+     * OUTSIDE LocalNetND'S RUN DIRECTORY, which every start wipes before it
+     * launches anything - `LocalNetRunner.useDataSource`.
+     *
+     * @return where the Windows data source classes are placed for LocalNetND;
+     *         `PgShim` adds its own directory under it
+     */
+    private static Path dirLocalNetShim() {
+        return RaposzaSettings.current().dirHome().resolve(STR_DIR_LOCALNET_SHIM);
     }
 
 
@@ -3381,6 +3584,23 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
+        // WINDOWS: THE DATA SOURCE THAT ANSWERS POSTGRESQL'S REFUSAL - `todo.md`
+        // W-14. The runner cannot name the class itself, `useDataSource` says
+        // why; the Sandbox path places the same two class files the same way.
+        // A start that cannot place them stops here rather than naming a
+        // class Canton would not find.
+        if (PgShim.flagNeeded(HostPlatform.ofDefaults())) {
+            try {
+                runnerNew.useDataSource(PgShim.extract(dirLocalNetShim()),
+                        PgShim.strDataSourceClass(HostPlatform.ofDefaults()));
+            }
+            catch (IOException ex) {
+                Modals.warn(this, "could not place the Windows data source classes under "
+                        + dirLocalNetShim() + ": " + ex.getMessage());
+                return;
+            }
+        }
+
         // THE KEY IS THREE THINGS ON THIS TOPOLOGY - the Splice bundle, the
         // Canton jar the three participants run inside, and the port block
         // Canton's topology state names. {@link Founding} says why each one
@@ -3495,7 +3715,10 @@ public final class SandboxWindow extends JFrame {
                 });
             }
         }, "localnet-gui-start");
-        threadStart.setDaemon(true);
+        // NOT A DAEMON. A cancelled start ends HERE, in the catch, by stopping
+        // what it brought up - a window closed during the start must not take
+        // that stop down with the JVM. See cancelStart.
+        threadStart.setDaemon(false);
         threadStart.start();
     }
 
@@ -3563,7 +3786,10 @@ public final class SandboxWindow extends JFrame {
         lamps.setStack(runnerHere);
         rawarAnnounce();
         startLocalNetPqs();
-        mapDarsLocal.values().forEach(DarsLivePane::refresh);
+        // EACH TAB READS ITS LIST NOW.
+        for (DarsLivePane paneRole : mapDarsLocal.values()) {
+            paneRole.refresh();
+        }
         webRefresh();
         enterState(SandboxService.State.RUNNING);
         applyControls(SandboxService.State.RUNNING);
@@ -3594,6 +3820,12 @@ public final class SandboxWindow extends JFrame {
 
 
     private void startRequested() {
+        // A RESET OR A FOUNDING PASS WHOSE STOP OUTLIVED THE WINDOW - the user
+        // closed it during the stop. A start now would bring up a stack with
+        // no window and no way to stop it but a kill.
+        if (!isDisplayable())
+            return;
+
         // THE BIND IS TRIED AGAIN HERE, and this is the defect of 2026-09-22.
         // The constructor binds once. An operator who starts this window while
         // a previous Sandbox still holds the discovery port gets the conflict
@@ -3838,7 +4070,10 @@ public final class SandboxWindow extends JFrame {
                 SwingUtilities.invokeLater(() -> startFailed(strMessage));
             }
         }, "sandbox-gui-start");
-        threadStart.setDaemon(true);
+        // NOT A DAEMON. A start cancelled under it can still be launching a
+        // process when the cancel's stop returns, and startCancelled stops
+        // again after it. See cancelStart.
+        threadStart.setDaemon(false);
         threadStart.start();
     }
 
@@ -3966,7 +4201,11 @@ public final class SandboxWindow extends JFrame {
         enterState(SandboxService.State.STOPPING);
 
         Thread threadCancel = new Thread(serviceHere::stop, "sandbox-gui-cancel");
-        threadCancel.setDaemon(true);
+        // NOT A DAEMON. His report, 2026-10-07: the window closed with X during
+        // a cancelled start, the JVM exited, and this thread died with it -
+        // canton, splice and PostgreSQL were left holding the ports with PPID
+        // 1. The JVM now waits for the stop.
+        threadCancel.setDaemon(false);
         threadCancel.start();
     }
 
@@ -3988,7 +4227,8 @@ public final class SandboxWindow extends JFrame {
         // there are processes nobody is holding. stop() is idempotent.
         if (serviceHere != null) {
             Thread threadStop = new Thread(serviceHere::stop, "sandbox-gui-cancel");
-            threadStop.setDaemon(true);
+            // Not a daemon - see cancelStart.
+            threadStop.setDaemon(false);
             threadStop.start();
         }
 
@@ -4010,6 +4250,12 @@ public final class SandboxWindow extends JFrame {
      * @param strMilestone what the log says this stop was
      */
     private void enterStopped(String strMilestone) {
+        // THE WINDOW WAS CLOSED DURING THE STOP - closeWhileStopping. There is
+        // nothing left to show it in, and the shutdown hook is LEFT in place:
+        // stop() is idempotent, and one more at exit costs nothing.
+        if (!isDisplayable())
+            return;
+
         milestone(strMilestone);
         // NO BLANK LINE HERE ANY MORE - it is written at the HEAD of the next
         // run instead, by `separateRun`. Two reasons, and the second is the
@@ -4225,7 +4471,8 @@ public final class SandboxWindow extends JFrame {
                 });
             }
         }, "sandbox-gui-stop");
-        threadStop.setDaemon(true);
+        // Not a daemon - see cancelStart.
+        threadStop.setDaemon(false);
         threadStop.start();
     }
 
@@ -4265,6 +4512,25 @@ public final class SandboxWindow extends JFrame {
 
 
     private void closeRequested() {
+        // A START OR A STOP IN FLIGHT. isRunning() is true only for RUNNING,
+        // so both took the branch below: the hook was removed, the window
+        // disposed, and the JVM exited under the stop thread. His report,
+        // 2026-10-07: canton, splice and PostgreSQL orphaned, the next start
+        // refused on the ports.
+        if (stateNow == SandboxService.State.STARTING) {
+            if (!Modals.isConfirmed(this, "A start is in progress. Cancel it and close?",
+                    "raposza sandbox", JOptionPane.QUESTION_MESSAGE))
+                return;
+
+            cancelStart();
+            closeWhileStopping();
+            return;
+        }
+        if (stateNow == SandboxService.State.STOPPING) {
+            closeWhileStopping();
+            return;
+        }
+
         // THE SAME CORRECTION, AND THIS ONE IS WHAT LEAKED A WHOLE LOCALNET.
         // `service` is null on the LocalNet topology, so closing the window
         // took the branch below, removed the shutdown hook and disposed - and
@@ -4302,6 +4568,26 @@ public final class SandboxWindow extends JFrame {
             paneJwt.stopService();
             dispose();
         });
+    }
+
+
+    /**
+     * Closes the window while a stop runs underneath it.
+     *
+     * Everything the ordinary close does EXCEPT removing the shutdown hook. The
+     * stop threads are not daemons, so the JVM stays until they are done;
+     * the hook is what still stops the stack if the user presses Ctrl-C in
+     * the meantime.
+     */
+    private void closeWhileStopping() {
+        saveProfile();
+        discardFixtures();
+        timerLamp.stop();
+        timerUsers.stop();
+        discovery.stop();
+        rawar.stop();
+        paneJwt.stopService();
+        dispose();
     }
 
 
@@ -4858,6 +5144,10 @@ public final class SandboxWindow extends JFrame {
         btnSave.setEnabled(controls.flagSave() && !flagAviationBusy && !flagPharmaBusy);
         lstSnapshot.setEnabled(controls.flagSnapshots());
         form.setInputEnabled(controls.flagInput());
+        // AND NOT WHILE DPM INSTALLS - his finding, 2026-10-13. The rule above
+        // would give the button back on every state change during it.
+        if (flagDpmInstalling)
+            form.setInstallEnabled(false);
         paneDars.setInputEnabled(controls.flagInput());
         // WHAT A RUNNING STACK IS BUILT ON is locked on the Settings tab by
         // the same rule that locks the form - his instruction, 2026-10-04.

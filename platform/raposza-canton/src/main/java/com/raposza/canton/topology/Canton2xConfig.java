@@ -18,12 +18,10 @@ import java.util.List;
  * usage line offers daemon, run and generate; the participant, the domain and
  * the script that connects them are ours to write.
  *
- * Ported from the CantonSandboxPqs prototype, which runs this shape in
- * production against 2.9 and 2.10. Auto-init only: Canton generates its own
- * namespace key and identity on start. The prototype's manual-init path, which
- * uploads a namespace key to hold the participant UID stable across runs, is a
- * later increment - its console calls are annotated as verified on one 2.x
- * minor line and this project targets three.
+ * Auto-init only: Canton generates its own namespace key and identity on
+ * start. A manual-init path, which uploads a namespace key to hold the
+ * participant UID stable across runs, is a later increment - this project
+ * targets three 2.x minor lines.
  *
  * The domain is on MEMORY storage and the participant on PostgreSQL. That is
  * not an oversight: nothing here survives a restart, because the embedded
@@ -51,7 +49,7 @@ public final class Canton2xConfig {
     public static final String STR_DATABASE_PARTICIPANT = "participant";
 
     /**
-     * Measured on 2.9 and 2.10 in the prototype. NOT measured on 2.8, which
+     * Known good on 2.9 and 2.10. NOT measured on 2.8, which
      * sits on the far side of the PV 3/4 removal at 2.9.1 - if a 2.8 stack
      * refuses to start, this is the first field to change.
      */

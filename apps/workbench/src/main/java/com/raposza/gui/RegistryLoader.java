@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,8 +76,28 @@ public final class RegistryLoader {
      */
     public static TypeRegistry_i load(LedgerClient_i client, PackageCache_i cache,
             LfDecoder_i decoder) {
-        if (client == null || cache == null || decoder == null)
-            throw new IllegalArgumentException("client, cache and decoder are required");
+        return load(client, cache, decoder, idPackage -> {
+        });
+    }
+
+
+    /**
+     * The same, telling the caller which packages were skipped - the
+     * Workbench's status bar says so, because a package nobody can read is a
+     * template CaQL then cannot name, and the log is not where a user looks.
+     *
+     * @param client the connected participant
+     * @param cache the package cache, which is per user and not per profile
+     * @param decoder the Daml-LF decoder
+     * @param sinkUnread told the id of each package that could not be fetched
+     *        or decoded
+     * @return a registry over the packages this participant holds
+     * @throws LedgerException when the participant will not list its packages
+     */
+    public static TypeRegistry_i load(LedgerClient_i client, PackageCache_i cache,
+            LfDecoder_i decoder, Consumer<String> sinkUnread) {
+        if (client == null || cache == null || decoder == null || sinkUnread == null)
+            throw new IllegalArgumentException("client, cache, decoder and sink are required");
 
         List<String> lstId = client.packageIds();
         Set<String> setHeld = cache.ids();
@@ -95,6 +116,7 @@ public final class RegistryLoader {
                 if (optArchive.isEmpty()) {
                     cntFailed++;
                     LOG.warn("participant listed package {} but does not hold it", idPackage);
+                    sinkUnread.accept(idPackage);
                     continue;
                 }
 
@@ -106,6 +128,7 @@ public final class RegistryLoader {
             catch (RuntimeException ex) {
                 cntFailed++;
                 LOG.warn("package {} could not be read: {}", idPackage, ex.toString());
+                sinkUnread.accept(idPackage);
             }
         }
 

@@ -140,10 +140,17 @@ public final class LocalNetStager {
             }
 
             String strConf = Files.readString(fileConf, StandardCharsets.UTF_8);
+            // FORWARD SLASHES, ALWAYS - `todo.md` W-14, D-601. Inside a HOCON
+            // quoted string a backslash starts an escape, so a Windows staging
+            // root turns the `\n` of `native-localnet` into a newline and then
+            // hits `\U`, which is no escape at all, and the file does not
+            // parse. Java on Windows opens a forward-slash path as it is, and
+            // on Linux this changes nothing.
+            String strDirApp = strForwardSlashes(dirApp);
             strConf = strConf.replace("include file(\"/app/",
-                    "include file(\"" + dirApp + "/");
+                    "include file(\"" + strDirApp + "/");
             strConf = strConf.replace("filesystem:/app/",
-                    "filesystem:" + dirApp + "/");
+                    "filesystem:" + strDirApp + "/");
             // THE SPLICE APPS' VERIFIER, after the includes and therefore
             // after the role files that set it - HOCON takes the last
             // assignment. Empty on the canton namespace and whenever the
@@ -162,6 +169,16 @@ public final class LocalNetStager {
             // and the file it could not touch was discarded - 2026-09-21.
             throw new UncheckedIOException("could not stage " + strNamespace + " - " + ex, ex);
         }
+    }
+
+
+    /**
+     * @param dir a staging root
+     * @return its path with every backslash a forward slash, which HOCON reads
+     *         literally inside a quoted string and Windows opens unchanged
+     */
+    static String strForwardSlashes(Path dir) {
+        return dir.toString().replace('\\', '/');
     }
 
 

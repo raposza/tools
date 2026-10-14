@@ -92,7 +92,7 @@ import javax.swing.text.DocumentFilter;
  *                 on it as widely, and the terminal has no snapshots to make
  *                 it necessary.
  *                 not be a checkbox when it arrives.
- * heap            {@value #N_HEAP_CANTON_MB} MB, the prototype's figure.
+ * heap            {@value #N_HEAP_CANTON_MB} MB.
  * db prefix       none, so the databases are named after their nodes.
  * party, user     neither. Canton already has `participant_admin` on a bare
  *                 start, measured on 3.5.11, so a form that asked for a
@@ -150,8 +150,8 @@ public final class SandboxForm extends JPanel {
 
 
     /**
-     * `-Xmx` for Canton, from the prototype's `SettingsStore`. Measured there
-     * on a 2.10 participant; a 3.x subcommand runs a participant, a sequencer
+     * `-Xmx` for Canton, sized on a 2.10 participant; a 3.x subcommand runs a
+     * participant, a sequencer
      * and a mediator in the one JVM, so if a 3.x start dies on memory THIS is
      * the number to raise and the symptom will say so plainly.
      *
@@ -559,6 +559,32 @@ public final class SandboxForm extends JPanel {
 
 
     /**
+     * @return the Splice versions the box lists, in its order; empty when it
+     *         lists Cantons
+     */
+    public List<String> lstSplice() {
+        List<String> lstOut = new ArrayList<>();
+        for (int idx = 0; idx < cmbCanton.getItemCount(); idx++) {
+            Object objAt = cmbCanton.getItemAt(idx);
+            if (objAt instanceof String)
+                lstOut.add((String) objAt);
+        }
+        return lstOut;
+    }
+
+
+    /**
+     * @param nSeconds the ready timeout to show
+     * @throws IllegalArgumentException when it is outside the profile's range
+     */
+    public void setTimeoutReady(int nSeconds) {
+        requireIn(nSeconds, SandboxProfile.N_SECONDS_READY_MIN,
+                SandboxProfile.N_SECONDS_READY_MAX, "Ready timeout s");
+        fldTimeout.setText(String.valueOf(nSeconds));
+    }
+
+
+    /**
      * @return what is selected, or null when nothing startable is installed
      */
     public CantonInstallation selected() {
@@ -811,6 +837,18 @@ public final class SandboxForm extends JPanel {
         for (JComponent comp : lstInput) {
             comp.setEnabled(flagOn);
         }
+    }
+
+
+    /**
+     * The SDK row's Install alone. A DPM install takes minutes and the button
+     * beside the box would offer it again - his finding, 2026-10-13: an
+     * accidental click during the install opened `Install DPM?` a second time.
+     *
+     * @param flagOn whether Install may be pressed
+     */
+    public void setInstallEnabled(boolean flagOn) {
+        btnInstallSdk.setEnabled(flagOn);
     }
 
 

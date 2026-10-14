@@ -104,7 +104,14 @@ public final class SpliceInstallDialog extends JDialog {
 
     public static final String STR_CLOSE = "Close";
 
-    public static final String STR_READING = "Reading the Splice releases...";
+    /**
+     * WHERE THE LIST WILL BE, AND SAYING TO WAIT - his instruction, 2026-10-13,
+     * `todo.md` A-75: "Make sure to tell the user that he/she should give it a
+     * moment to load the Splice versions when opening 'Install'." The releases
+     * are read from GitHub page by page, and an empty dialog read as broken.
+     */
+    public static final String STR_READING =
+            "Loading the Splice versions. Give it a moment.";
 
     public static final String STR_FAILED = "Install failed: ";
 
@@ -142,7 +149,10 @@ public final class SpliceInstallDialog extends JDialog {
 
     private final JPanel pnlRows = new JPanel(new GridBagLayout());
 
-    private final JLabel lblStatus = new JLabel(STR_READING);
+    private final JLabel lblStatus = new JLabel(" ");
+
+    /** In the list's place until the versions are read. */
+    private final JLabel lblReading = new JLabel(STR_READING);
 
     private final JButton btnFile = new JButton(STR_FILE);
 
@@ -164,6 +174,9 @@ public final class SpliceInstallDialog extends JDialog {
     public SpliceInstallDialog(Window owner, Set<String> setInstalledNow, Loader loaderNew,
             Sizer sizerNew, Downloader downloaderNew, FileInstaller fileInstallerNew) {
         super(owner, STR_TITLE, ModalityType.APPLICATION_MODAL);
+        // ITS OWN ICON - his instruction, 2026-10-07, after LaunchDialog: a
+        // dialog with no icon images shows Java's in the task bar, owner or not.
+        AppIcon.apply(this);
         if (loaderNew == null || sizerNew == null || downloaderNew == null || fileInstallerNew == null)
             throw new IllegalArgumentException("a loader, a sizer and both installers are required");
 
@@ -174,6 +187,7 @@ public final class SpliceInstallDialog extends JDialog {
         this.fileInstaller = fileInstallerNew;
 
         pnlRows.setOpaque(false);
+        pnlRows.add(lblReading);
         JPanel pnlHold = new JPanel(new BorderLayout());
         pnlHold.setOpaque(false);
         pnlHold.add(pnlRows, BorderLayout.NORTH);
@@ -231,6 +245,9 @@ public final class SpliceInstallDialog extends JDialog {
 
 
     private void loaded(List<String> lstVersion, String strError) {
+        pnlRows.remove(lblReading);
+        pnlRows.revalidate();
+        pnlRows.repaint();
         if (strError != null) {
             lblStatus.setForeground(GuiTheme.COL_BAD);
             lblStatus.setText(STR_UNREAD + strError);

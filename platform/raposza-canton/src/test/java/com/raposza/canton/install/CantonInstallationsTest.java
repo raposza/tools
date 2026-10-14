@@ -124,12 +124,6 @@ class CantonInstallationsTest {
         // `dpm install 3.4.11` leaves an ENTERPRISE
         // 3.4.11 in the cache while the assistant's OPEN SOURCE 3.4.11 stays
         // under ~/.daml. Same version, two editions, BOTH discovered.
-        //
-        // This test asserted refusal between 2026-08-17 morning and afternoon.
-        // The refusal rested on LICENSE-DA.txt being present in the enterprise
-        // jar; it is present in the OPEN SOURCE jar too, so it never
-        // discriminated. Acquisition is the operator's call and it has been
-        // made. Do not flip this back.
         assistant("3.4.11", "canton.jar", STR_MAIN_COMMUNITY);
         dpm("canton-enterprise", "3.4.11", "canton-enterprise-3.4.11.jar", STR_MAIN_ENTERPRISE);
 

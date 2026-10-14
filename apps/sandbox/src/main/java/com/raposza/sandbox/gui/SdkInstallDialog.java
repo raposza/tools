@@ -195,6 +195,9 @@ public final class SdkInstallDialog extends JDialog {
     public SdkInstallDialog(Window owner, Loader loaderNew, Installer installerNew,
             Function<SdkOffer, String> fnCantonNew) {
         super(owner, STR_TITLE, ModalityType.APPLICATION_MODAL);
+        // ITS OWN ICON - his instruction, 2026-10-07, after LaunchDialog: a
+        // dialog with no icon images shows Java's in the task bar, owner or not.
+        AppIcon.apply(this);
         if (loaderNew == null || installerNew == null || fnCantonNew == null)
             throw new IllegalArgumentException("a loader, an installer and a canton reader are required");
 
