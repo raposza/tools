@@ -1,7 +1,9 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z -->
+<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-14T08:05:00Z -->
 # Raposza Tools
+
+**New here? Start with [FIRST_INSTALL.md](FIRST_INSTALL.md)** — from a clean machine to a running Sandbox and Workbench, on Linux and Windows.
 
 **A complete Canton and Splice development environment on your own machine. No Docker. No containers. One window.**
 

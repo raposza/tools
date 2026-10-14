@@ -2,6 +2,18 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Changelog
 
+## 0.6.1 - 2026-10-14
+
+* **Snapshots wait for PostgreSQL to exit.** The founding snapshot and Save
+  snapshot copy the database cluster only once the server that held it has
+  exited, and wait up to 60 seconds for it; if it is still running then,
+  nothing is copied and the window says so. Stopping returned before the
+  server had always exited, so on Windows the founding snapshot could fail on
+  `postmaster.pid`, and elsewhere a copy could catch a cluster mid-shutdown.
+* **`FIRST_INSTALL.md`** no longer downloads DPM and Splice by hand: the
+  Sandbox installs them from the window, and the fixtures are created from the
+  Settings tab. The README's first line points to it.
+
 ## 0.6.0 - 2026-10-14
 
 * **LocalNetND on Windows.** The Splice bundle carries one launcher, a Unix

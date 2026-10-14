@@ -13,10 +13,12 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -121,6 +123,18 @@ public final class Snapshots {
     public static final String STR_KEY_PQS = "pqs";
 
     public static final String STR_KEY_CREATED = "created";
+
+    /**
+     * HOW LONG A SAVE WAITS FOR POSTGRESQL TO LET GO OF ITS CLUSTER - `pg_ctl`'s
+     * own default for `-w`. The stop that precedes a save returns after at most
+     * five seconds whether or not the server has exited: the embedded
+     * PostgreSQL runs `pg_ctl stop -m fast -t 5 -w`. Measured on Windows,
+     * 2026-10-14: a founding stop outlasted that, and the copy that followed
+     * started on a server still shutting down.
+     */
+    public static final Duration DUR_WAIT_STOPPED = Duration.ofSeconds(60);
+
+    private static final long N_POLL_MS = 200L;
 
     /**
      * WHAT A NAME MAY NOT CONTAIN. Path separators, the characters Windows
@@ -347,11 +361,14 @@ public final class Snapshots {
     /**
      * Copies a STOPPED cluster into a named snapshot.
      *
+     * NOTHING IS COPIED UNTIL THE SERVER HAS EXITED - {@link #awaitStopped}.
+     *
      * @param strName what to call it
      * @param dirData the cluster to copy, which nothing may be writing to
      * @param props what was running when it was taken
      * @throws IllegalArgumentException when the name is unusable or taken
-     * @throws IllegalStateException when the copy fails
+     * @throws IllegalStateException when the server is still running or the
+     *         copy fails
      */
     public void save(String strName, Path dirData, Properties props) {
         requireName(strName);
@@ -360,6 +377,7 @@ public final class Snapshots {
             throw new IllegalArgumentException("there is already a snapshot called " + strName);
         if (!Files.isDirectory(dirData))
             throw new IllegalStateException("there is no cluster at " + dirData);
+        awaitStopped(dirData, DUR_WAIT_STOPPED);
 
         Properties propsAll = new Properties();
         propsAll.putAll(props);
@@ -383,6 +401,68 @@ public final class Snapshots {
             throw new IllegalStateException("could not write the snapshot " + strName + ": "
                     + ex.getMessage(), ex);
         }
+    }
+
+
+    /**
+     * Waits until no PostgreSQL server holds the cluster.
+     *
+     * THE TEST IS THE SERVER'S OWN LOCK. `postmaster.pid` is written at start and
+     * removed by a clean shutdown, and its first line is the postmaster's
+     * process id. Gone, or naming a process that is not alive, means stopped -
+     * the second is the lock a killed server leaves, which a restore deletes.
+     * A lock that cannot be read is counted as held: on Windows that is what a
+     * server still running looks like.
+     *
+     * @param dirData the cluster
+     * @param durWait how long to wait
+     * @throws IllegalStateException when a server still holds it after durWait
+     */
+    static void awaitStopped(Path dirData, Duration durWait) {
+        long nDeadline = System.nanoTime() + durWait.toNanos();
+        while (isServerAlive(dirData)) {
+            if (System.nanoTime() - nDeadline >= 0)
+                throw new IllegalStateException("PostgreSQL still holds " + dirData + " after "
+                        + durWait.toSeconds() + " s; nothing was copied");
+            try {
+                Thread.sleep(N_POLL_MS);
+            }
+            catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted waiting for PostgreSQL to stop", ex);
+            }
+        }
+    }
+
+
+    /**
+     * @param dirData a cluster directory
+     * @return whether the process its `postmaster.pid` names is alive
+     */
+    static boolean isServerAlive(Path dirData) {
+        List<String> lstLine;
+        try {
+            lstLine = Files.readAllLines(dirData.resolve(STR_FILE_POSTMASTER_PID),
+                    StandardCharsets.US_ASCII);
+        }
+        catch (NoSuchFileException ex) {
+            return false;
+        }
+        catch (IOException ex) {
+            return true;
+        }
+        // AN EMPTY OR UNPARSEABLE LOCK is one the server is still writing.
+        if (lstLine.isEmpty())
+            return true;
+        long nPid;
+        try {
+            nPid = Long.parseLong(lstLine.get(0).trim());
+        }
+        catch (NumberFormatException ex) {
+            return true;
+        }
+        return ProcessHandle.of(nPid).map(ProcessHandle::isAlive).orElse(Boolean.FALSE)
+                .booleanValue();
     }
 
 

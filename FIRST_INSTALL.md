@@ -1,24 +1,24 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-12T10:45:00Z -->
+<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-14T12:25:00Z -->
 # First installation — Linux and Windows
 
-From a clean machine to a running Sandbox and Workbench. The versions below are the ones this release is built and tested with:
+From a clean machine to a running Sandbox and Workbench. You install Java and download Raposza; the Sandbox downloads and installs DPM, the Daml SDK and Splice itself. The versions below are the ones this release is built and tested with:
 
 | | version |
 | --- | --- |
 | Java | 21 or newer |
 | Daml SDK | 3.6.0 |
-| Splice | 0.8.3 |
-| Raposza | 0.6.0 |
+| Splice | 0.8.3 and 0.9.1 |
+| Raposza | 0.6.1 |
 
-Linux commands run in a shell; Windows commands run in PowerShell. On Windows the DPM installer asks for administrator rights; nothing else does, on either platform.
+Linux commands run in a shell; Windows commands run in PowerShell. Nothing asks for administrator rights, on either platform.
 
 ---
 
 ## 1. Verify Java
 
-Java 21 or newer must be installed and available on `PATH`.
+Java 21 or newer must be installed and available on `PATH`. If it is not, download it from [oracle.com/java/technologies/downloads](https://www.oracle.com/java/technologies/downloads/).
 
 Linux and Windows:
 
@@ -28,64 +28,11 @@ java -version
 
 ---
 
-## 2. Install DPM and the Daml SDK
+## 2. Download Raposza
 
-DPM is Digital Asset's package manager for the Daml SDK. It installs the Daml SDK with it. It is a command-line tool, and there is no daemon to start.
+Download `sandbox-0.6.1-app.jar`, `workbench-0.6.1-app.jar` and `SHA256SUMS` from the [Raposza 0.6.1 release](https://github.com/raposza/tools/releases/tag/v0.6.1) into your Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
 
-Linux:
-
-```
-curl -fsSL https://get.digitalasset.com/install/install.sh -o install-dpm.sh
-sh install-dpm.sh
-export PATH="$HOME/.dpm/bin:$PATH"
-dpm version
-```
-
-Windows:
-
-1. Open [docs.canton.network/sdks-tools/cli-tools/dpm](https://docs.canton.network/sdks-tools/cli-tools/dpm).
-2. Under **Windows Installation**, click the **windows installer** link. It downloads `dpm-3.6.0-windows-amd64.exe`, about 1.2 GB.
-3. Edge warns that the file is not commonly downloaded. Open the arrow next to **Delete** and choose **Keep anyway**.
-4. Run `dpm-3.6.0-windows-amd64.exe` from your Downloads folder and answer **Yes** when Windows asks for administrator rights.
-5. Open a **new** PowerShell window, so that it picks up DPM on `PATH`, and check:
-
-```
-dpm version
-```
-
----
-
-## 3. Install Splice
-
-Splice 0.8.3 from [Digital Asset's Splice releases](https://github.com/digital-asset/decentralized-canton-sync/releases), unpacked where the Sandbox looks for it: `<splice directory>/<version>/splice-node`. The download is about 800 MB.
-
-Linux, into `~/.splice/0.8.3/splice-node`:
-
-```
-SPLICE_VERSION=0.8.3
-mkdir -p "$HOME/.splice/$SPLICE_VERSION"
-curl -fL -o "/tmp/${SPLICE_VERSION}_splice-node.tar.gz" \
-  "https://github.com/digital-asset/decentralized-canton-sync/releases/download/v${SPLICE_VERSION}/${SPLICE_VERSION}_splice-node.tar.gz"
-tar -xzf "/tmp/${SPLICE_VERSION}_splice-node.tar.gz" -C "$HOME/.splice/$SPLICE_VERSION"
-```
-
-Windows, into `%USERPROFILE%\.splice\0.8.3\splice-node`:
-
-```
-$ProgressPreference = 'SilentlyContinue'
-$s = "0.8.3"
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.splice\$s" | Out-Null
-Invoke-WebRequest "https://github.com/digital-asset/decentralized-canton-sync/releases/download/v$s/${s}_splice-node.tar.gz" -OutFile "$env:TEMP\${s}_splice-node.tar.gz"
-tar -xzf "$env:TEMP\${s}_splice-node.tar.gz" -C "$env:USERPROFILE\.splice\$s"
-```
-
----
-
-## 4. Download Raposza
-
-Download `sandbox-0.6.0-app.jar`, `workbench-0.6.0-app.jar` and `SHA256SUMS` from the [Raposza 0.6.0 release](https://github.com/raposza/tools/releases/tag/v0.6.0) into your Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
-
-Verify them.
+Check the hashcode:
 
 Linux:
 
@@ -94,7 +41,7 @@ cd ~/Downloads
 sha256sum -c SHA256SUMS
 ```
 
-Windows:
+Windows - PowerShell:
 
 ```
 cd $env:USERPROFILE\Downloads
@@ -105,55 +52,96 @@ Both jars must report `OK`.
 
 ---
 
-## 5. Start the Sandbox with the Aviation fixture
+## 3. Start the Sandbox with the Aviation fixture
 
-From the Downloads folder, Linux and Windows:
+Linux:
 
 ```
-java -jar sandbox-0.6.0-app.jar
+cd ~/Downloads
+java -jar sandbox-0.6.1-app.jar
+```
+
+Windows - PowerShell:
+
+```
+cd $env:USERPROFILE\Downloads
+java -jar sandbox-0.6.1-app.jar
 ```
 
 1. Choose **Single participant**.
-2. Answer **Yes** to **Install Aviation test fixture?**
+2. The **SDK** box is empty. Press **Install** beside it and answer **Yes** to **Install DPM?**
 
-   The Sandbox builds the test fixture, takes a founding snapshot, and starts with the Aviation data.
-3. Wait until the log says **Aviation data created, system running**. Then press **Save snapshot** and name it `Aviation`.
+   The Sandbox downloads DPM, Digital Asset's package manager, and installs it with the Daml SDK it comes with. The download is large and takes a while. When the log says **Installed DPM with DAML SDK**, followed by the version, the SDK box shows that version.
+3. Open the **Settings** tab and press **Create Aviation test data**.
+
+   The Sandbox builds the test fixture, takes a founding snapshot, and starts with the Aviation data. It starts and stops a few times. This is expected.
+4. All lights will turn green. But wait until the log says **Aviation data created, system running**. Then press **Save snapshot** and name it `Aviation`.
 
    The Sandbox stops and saves the snapshot.
-4. Select **Aviation** under **Snapshots**, if it is not already selected, and press **Start**.
+5. Select **Aviation** under **Snapshots**, if it is not already selected, and press **Start**.
+6. The log says **Sandbox started in**, followed by the number of seconds. If you press **Reset**, the ledger stops, the snapshot is restored, and the ledger starts again. It takes about the same time each time.
 
 The ledger now holds the Aviation data, and every start from the `Aviation` snapshot gives you the same ledger again.
 
 ---
 
-## 6. Start the Workbench
+## 4. Start the Workbench
 
-In a second terminal or PowerShell window, from the Downloads folder:
+In a second terminal or PowerShell window.
+
+Linux:
 
 ```
-java -jar workbench-0.6.0-app.jar
+cd ~/Downloads
+java -jar workbench-0.6.1-app.jar
 ```
 
-1. Choose **a local Sandbox**, leave the default port and press **OK**.
+Windows - PowerShell:
+
+```
+cd $env:USERPROFILE\Downloads
+java -jar workbench-0.6.1-app.jar
+```
+
+1. Choose **a local Sandbox**, leave the default port and press **OK**. It takes a few seconds for the data to load.
 2. **work as** shows `participant_admin`, a user that can see users and parties.
 3. Select **superuser** in **work as**. It shows no users and parties, but the templates and contracts are visible: the aircraft, their components and their defects.
 4. Open the **CaQL** tab. **Ctrl+Enter** runs one line. To list parties and users, work as `participant_admin` again. For everything else, work as `superuser`, or as another user to test its privileges.
 5. **Skills** is a reference of CaQL that you can give to an LLM to help it write CaQL statements.
 
-Seeing the Aviation contracts confirms more than two windows opening: it confirms DAR loading, party allocation, contract creation and Ledger API access.
-
 ---
 
-## 7. Run LocalNetND
+## 5. Run LocalNetND
 
-1. Close the Sandbox window. Closing it stops the stack.
-2. Start the Sandbox again, as in step 5.
+Prerequisite: DPM must be installed. See [3. Start the Sandbox with the Aviation fixture](#3-start-the-sandbox-with-the-aviation-fixture).
+
+1. Close both windows.
+2. Start the Sandbox again, as in step 3.
 3. Choose **LocalNetND**.
-4. Choose Splice **0.8.3** in the version box.
-5. Press **Start**.
-6. Answer **Yes** to **Install Pharma test fixture?**
+4. The **Splice** box is empty. Press **Install** beside it. The **Install Splice** dialog takes a moment to load the Splice versions.
+5. Press **Install** on the latest version. The dialog closes when Splice is installed, and the **Splice** box shows the version.
+6. Open the **Settings** tab and press **Create Pharma test data**.
 
-It is ready when it reports **Pharma data created, system running**. Reconnect the Workbench as in step 6. It opens one tab per participant, `app-provider`, `app-user` and `sv`, and each tab shows what that participant sees.
+   The Sandbox builds the test fixture and starts LocalNetND with the Pharma data.
+7. Wait until the log says `HH:mm:ss  Pharma data created, system running` before you create a snapshot.
+
+Start the Workbench again, in a second terminal or PowerShell window.
+
+Linux:
+
+```
+cd ~/Downloads
+java -jar workbench-0.6.1-app.jar
+```
+
+Windows - PowerShell:
+
+```
+cd $env:USERPROFILE\Downloads
+java -jar workbench-0.6.1-app.jar
+```
+
+Connect as in step 4. It opens one tab per participant, `app-provider`, `app-user` and `sv`, and each tab shows what that participant sees.
 
 ---
 

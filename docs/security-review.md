@@ -6,11 +6,19 @@
 code, from a static reading of this tree on 2026-09-25, read again on
 2026-09-26 against the tree released as 0.4.0, on 2026-09-27 for 0.4.1, on
 2026-10-05 for 0.5.0, on 2026-10-06 for 0.5.0 with Raposza OIDC 0.5.1, and on
-2026-10-14 for 0.6.0.
+2026-10-14 for 0.6.0, and on 2026-10-14 for 0.6.1.
 Nothing in it was
 established by a third party, and no third party has signed anything about it.
 When an external audit exists it will be published beside this document,
 unedited.
+
+**Reviewed 2026-10-14 for 0.6.1.** The change since 0.6.0 was read against
+the tree, and `SECURITY.md` with it: a snapshot waits until the PostgreSQL
+server holding the cluster has exited before it copies it, reading the
+server's own `postmaster.pid` in the cluster directory and asking the
+operating system whether the process it names is alive. It opens no port,
+writes nothing new and changes no permission. No statement changed; the rest
+stands as reviewed for 0.6.0. Raposza OIDC stays at 0.5.1.
 
 **Reviewed 2026-10-14 for 0.6.0.** The changes since 0.5.0 were read against
 the tree, and `SECURITY.md` with them; Raposza OIDC stays at 0.5.1. **TWO
