@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-14T12:25:00Z -->
+<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-16T07:10:00Z -->
 # First installation — Linux and Windows
 
 From a clean machine to a running Sandbox and Workbench. You install Java and download Raposza; the Sandbox downloads and installs DPM, the Daml SDK and Splice itself. The versions below are the ones this release is built and tested with:
@@ -13,6 +13,10 @@ From a clean machine to a running Sandbox and Workbench. You install Java and do
 | Raposza | 0.6.1 |
 
 Linux commands run in a shell; Windows commands run in PowerShell. Nothing asks for administrator rights, on either platform.
+
+If you already have DPM installed in an alternative directory, you can tweak the config in Sandbox 'Settings'.
+
+If you have a Splice version downloaded as a tar.gz file, you can install it with **Install from file...** in the **Install Splice** dialog. The file must keep the vendor's name, `<version>_splice-node.tar.gz`.
 
 ---
 
@@ -30,7 +34,9 @@ java -version
 
 ## 2. Download Raposza
 
-Download `sandbox-0.6.1-app.jar`, `workbench-0.6.1-app.jar` and `SHA256SUMS` from the [Raposza 0.6.1 release](https://github.com/raposza/tools/releases/tag/v0.6.1) into your Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
+Download 3 files: `sandbox-0.6.1-app.jar`, `workbench-0.6.1-app.jar` and `SHA256SUMS` from the [Raposza 0.6.1 release](https://github.com/raposza/tools/releases/tag/v0.6.1) into your Downloads folder.
+
+On Windows, Edge warns about each jar: choose **Keep file**.
 
 Check the hashcode:
 
@@ -52,7 +58,7 @@ Both jars must report `OK`.
 
 ---
 
-## 3. Start the Sandbox with the Aviation fixture
+## 3. Start the Sandbox with one participant
 
 Linux:
 
@@ -75,13 +81,9 @@ java -jar sandbox-0.6.1-app.jar
 3. Open the **Settings** tab and press **Create Aviation test data**.
 
    The Sandbox builds the test fixture, takes a founding snapshot, and starts with the Aviation data. It starts and stops a few times. This is expected.
-4. All lights will turn green. But wait until the log says **Aviation data created, system running**. Then press **Save snapshot** and name it `Aviation`.
+4. All lights will turn green. But wait until the log says **Aviation data created, system running**.
 
-   The Sandbox stops and saves the snapshot.
-5. Select **Aviation** under **Snapshots**, if it is not already selected, and press **Start**.
-6. The log says **Sandbox started in**, followed by the number of seconds. If you press **Reset**, the ledger stops, the snapshot is restored, and the ledger starts again. It takes about the same time each time.
-
-The ledger now holds the Aviation data, and every start from the `Aviation` snapshot gives you the same ledger again.
+The ledger now holds the Aviation data.
 
 ---
 
@@ -106,14 +108,16 @@ java -jar workbench-0.6.1-app.jar
 1. Choose **a local Sandbox**, leave the default port and press **OK**. It takes a few seconds for the data to load.
 2. **work as** shows `participant_admin`, a user that can see users and parties.
 3. Select **superuser** in **work as**. It shows no users and parties, but the templates and contracts are visible: the aircraft, their components and their defects.
-4. Open the **CaQL** tab. **Ctrl+Enter** runs one line. To list parties and users, work as `participant_admin` again. For everything else, work as `superuser`, or as another user to test its privileges.
+4. Open the **CaQL** tab. **Ctrl+Enter** runs one line. To create and list parties and users, work as `participant_admin` again. For everything else, work as `superuser`, or as another user to test its privileges.
 5. **Skills** is a reference of CaQL that you can give to an LLM to help it write CaQL statements.
 
 ---
 
-## 5. Run LocalNetND
+## 5. Start Sandbox with LocalNetND
 
-Prerequisite: DPM must be installed. See [3. Start the Sandbox with the Aviation fixture](#3-start-the-sandbox-with-the-aviation-fixture).
+ND = No Docker
+
+Prerequisite: DPM must be installed. See [3. Start the Sandbox with one participant](#3-start-the-sandbox-with-one-participant).
 
 1. Close both windows.
 2. Start the Sandbox again, as in step 3.
@@ -123,7 +127,7 @@ Prerequisite: DPM must be installed. See [3. Start the Sandbox with the Aviation
 6. Open the **Settings** tab and press **Create Pharma test data**.
 
    The Sandbox builds the test fixture and starts LocalNetND with the Pharma data.
-7. Wait until the log says `HH:mm:ss  Pharma data created, system running` before you create a snapshot.
+7. Wait until the log says `HH:mm:ss  Pharma data created, system running`.
 
 Start the Workbench again, in a second terminal or PowerShell window.
 
