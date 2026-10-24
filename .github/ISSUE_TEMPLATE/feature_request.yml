@@ -1,0 +1,50 @@
+# Copyright (c) 2026 bentzn
+# SPDX-License-Identifier: Apache-2.0
+# Author Claude/bentzn
+name: Feature request
+description: Something the Sandbox, the Workbench or CaQL should do and does not.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the existing issues first; add to one that already asks for this.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Sandbox - single participant
+        - Sandbox - LocalNetND
+        - Workbench
+        - CaQL
+        - Installation (FIRST_INSTALL.md)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what stops you?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+  - type: input
+    id: versions
+    attributes:
+      label: Canton, Daml SDK and Splice versions it concerns
+      placeholder: "Canton 3.5.18, Daml SDK 3.6.0, Splice 0.8.3"
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else

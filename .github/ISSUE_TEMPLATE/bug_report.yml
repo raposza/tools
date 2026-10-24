@@ -1,0 +1,97 @@
+# Copyright (c) 2026 bentzn
+# SPDX-License-Identifier: Apache-2.0
+# Author Claude/bentzn
+name: Bug report
+description: Something in the Sandbox, the Workbench or CaQL does not work as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search the existing issues first. A security vulnerability goes to info@raposza.com, not here - see SECURITY.md.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Sandbox - single participant
+        - Sandbox - LocalNetND
+        - Workbench
+        - CaQL
+        - Installation (FIRST_INSTALL.md)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: raposza-version
+    attributes:
+      label: Raposza version
+      placeholder: "0.6.1"
+    validations:
+      required: true
+  - type: input
+    id: ledger-versions
+    attributes:
+      label: Canton, Daml SDK and Splice versions
+      description: The ones the failing stack runs.
+      placeholder: "Canton 3.5.18, Daml SDK 3.6.0, Splice 0.8.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-detail
+    attributes:
+      label: Operating system and release
+      placeholder: "LMDE 7 / Windows Server 2025"
+    validations:
+      required: true
+  - type: input
+    id: java
+    attributes:
+      label: Java
+      description: The first line of `java -version`.
+      placeholder: 'openjdk version "21.0.8"'
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: From the window's Logs tab or the terminal. Remove anything private.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, DARs involved, what you already tried.
