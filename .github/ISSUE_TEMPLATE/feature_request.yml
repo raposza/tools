@@ -30,21 +30,11 @@ body:
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: suggestion
     attributes:
-      label: What you propose
-    validations:
-      required: true
+      label: Suggestion, request or idea
   - type: textarea
-    id: alternatives
+    id: supporting-docs
     attributes:
-      label: What you do today instead
-  - type: input
-    id: versions
-    attributes:
-      label: Canton, Daml SDK and Splice versions it concerns
-      placeholder: "Canton 3.5.18, Daml SDK 3.6.0, Splice 0.8.3"
-  - type: textarea
-    id: context
-    attributes:
-      label: Anything else
+      label: Supporting docs
+      description: Links, or drag files in.

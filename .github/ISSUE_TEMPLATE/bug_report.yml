@@ -27,16 +27,12 @@ body:
     attributes:
       label: Raposza version
       placeholder: "0.6.1"
-    validations:
-      required: true
   - type: input
     id: ledger-versions
     attributes:
       label: Canton, Daml SDK and Splice versions
       description: The ones the failing stack runs.
       placeholder: "Canton 3.5.18, Daml SDK 3.6.0, Splice 0.8.3"
-    validations:
-      required: true
   - type: dropdown
     id: os
     attributes:
@@ -52,16 +48,12 @@ body:
     attributes:
       label: Operating system and release
       placeholder: "LMDE 7 / Windows Server 2025"
-    validations:
-      required: true
   - type: input
     id: java
     attributes:
       label: Java
       description: The first line of `java -version`.
       placeholder: 'openjdk version "21.0.8"'
-    validations:
-      required: true
   - type: textarea
     id: actual
     attributes:
@@ -72,8 +64,6 @@ body:
     id: expected
     attributes:
       label: What you expected
-    validations:
-      required: true
   - type: textarea
     id: steps
     attributes:
@@ -82,16 +72,8 @@ body:
         1.
         2.
         3.
-    validations:
-      required: true
-  - type: textarea
-    id: logs
-    attributes:
-      label: Log output
-      description: From the window's Logs tab or the terminal. Remove anything private.
-      render: text
   - type: textarea
     id: context
     attributes:
       label: Anything else
-      description: Screenshots, DARs involved, what you already tried.
+      description: Logs, screenshots, DARs involved, what you already tried.
