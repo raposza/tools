@@ -6,11 +6,29 @@
 code, from a static reading of this tree on 2026-09-25, read again on
 2026-09-26 against the tree released as 0.4.0, on 2026-09-27 for 0.4.1, on
 2026-10-05 for 0.5.0, on 2026-10-06 for 0.5.0 with Raposza OIDC 0.5.1, and on
-2026-10-14 for 0.6.0, and on 2026-10-14 for 0.6.1.
+2026-10-14 for 0.6.0, on 2026-10-14 for 0.6.1, and on 2026-10-26 for 0.6.2.
 Nothing in it was
 established by a third party, and no third party has signed anything about it.
 When an external audit exists it will be published beside this document,
 unedited.
+
+**Reviewed 2026-10-26 for 0.6.2.** The changes since 0.6.1 were read against
+the tree, and `SECURITY.md` with them; Raposza OIDC stays at 0.5.1 and no
+dependency moved. **ONE STATEMENT WAS STALE and is corrected:** section 1 said
+scribe is a staged `scribe.jar`; it is now also taken from the DPM cache or
+from the jar the settings name. **ADDED:** each candidate scribe jar is run
+with `--version` before it is chosen, in section 1 and L-16; `file.pqs` in
+`settings.properties`, scribe's client in the provider's store and the
+temporary file the version is read from, in section 4; the `raposza-pqs`
+ledger user, which reads every party, and scribe's client secret, made per
+start, in section 5; that secret on scribe's command line, in section 6 and
+L-8. Save snapshot and the founding copy moving off the window's event thread
+open no port, write nothing new and change no permission. **SECTION 9's
+STATEMENT ON KNOWN VULNERABILITIES WAS INCOMPLETE and is replaced:** it named
+one carried advisory; every known-vulnerable version this repository's build
+carries is now listed there with the reason it stays, the Netty advisories
+sorted by whether a client reaches them, and the one a peer can reach is
+L-17. The rest stands as reviewed for 0.6.1.
 
 **Reviewed 2026-10-14 for 0.6.1.** The change since 0.6.0 was read against
 the tree, and `SECURITY.md` with it: a snapshot waits until the PostgreSQL
@@ -106,7 +124,7 @@ What the Sandbox runs:
 | program | how it is found | started by |
 | --- | --- | --- |
 | Canton, 2.x and 3.x | the installation the user selects | `CantonSandboxProcess`, `Canton2xProcess`, `Canton3xDaemonProcess`, `CantonConsoleProcess` |
-| scribe (PQS) | a staged `scribe.jar`; `java` from `PATH` | `ScribeProcess` |
+| scribe (PQS) | for the Canton line: the staged `~/.pqs/line/<line>/scribe.jar`, else the newest of the line in the DPM cache, whatever the jar is called, else the jar `file.pqs` names in the settings; `java` from `PATH` | `ScribeProcess` |
 | the 2.x JSON API | the SDK installation | `JsonApiProcess` |
 | Raposza OIDC | see below | `JwtMintProcess` |
 | `dpm`, `daml` | the installed toolchain | `ToolchainInstall`, `AviationRun`, `DamlScriptRun` |
@@ -124,6 +142,16 @@ digest check. Anything that can write to `~/.m2` therefore chooses what the
 Sandbox runs as the identity provider - which is the same account.
 `-Draposza.jwtmint.jar`, the property's name until 0.4.x, is refused at start
 rather than ignored, so the jar a developer names is the jar that runs.
+
+**Scribe is run once to ask its version before it is chosen.** A jar in the
+DPM cache, and the jar `file.pqs` names, is started as
+`java -jar <jar> --version` with `java` from `PATH`, given 30 s and then
+killed, and its answer is cached per path, size and modification time
+(`PqsInstallations`). A jar whose banner names another Canton line is not
+started for this one. The banner says which version the jar claims to be; it
+does not establish what the jar is, and no digest is checked. Anything that
+can write the DPM cache or the settings file chooses code that runs as scribe,
+and runs at that check - L-16.
 
 **Windows.** `dpm` and `daml` are `.cmd` files there and the SDK installer is
 `install.bat`, and the JDK starts those through `cmd.exe`, which parses its
@@ -279,7 +307,7 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 
 | path | contents | permissions |
 | --- | --- | --- |
-| `settings.properties` | ports, directories - its own, and the Daml Assistant, DPM and Splice installations when they are set - the external provider's URL | umask |
+| `settings.properties` | ports, directories - its own, and the Daml Assistant, DPM and Splice installations when they are set - the scribe jar `file.pqs` when it is set, the external provider's URL | umask |
 | `profiles/<version>-<edition>.properties` (Sandbox) | the form, INCLUDING the HMAC shared secret, `auth.secret`, in clear | umask |
 | `profiles/<name>.properties` (Workbench) | the auth mode and, ONLY if the user ticks "save", a bearer token in clear | **`rw-------`**, set after the write |
 | `audit.jsonl` | one line per CaQL submission | **`rw-------`** at creation |
@@ -288,7 +316,7 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 | `snapshots/` | whole copies of a stopped PostgreSQL data directory, per version and per LocalNetND key | the data files keep their mode; the directories and the meta file take the umask |
 | `fixtures/aviation`, `fixtures/pharma` | Daml project sources | umask |
 | `rawars/` | the pages the window's page server serves, put there by the user; read, never written | the user's |
-| `jwtmint/keys` | Raposza OIDC's key set, private members included, and its users and clients | written by that service; see its review |
+| `jwtmint/keys` | Raposza OIDC's key set, private members included, and its users and clients - among them scribe's client and its secret, registered by the window again at each start and never removed - section 5 | written by that service; see its review |
 | `raposza-oidc/raposza-oidc-app.jar` | the carried provider, unpacked | umask; `.part` then move |
 | `oidc-access/<port>/access.log` | the provider's access log, one line per request WITH ITS QUERY - so a mint for an HMAC participant leaves that participant's secret here. In `java.io.tmpdir` until 2026-10-05 | **`rwx------`** on both directories where the file system has POSIX permissions; the file takes the umask |
 | `packages/` | cached Daml-LF packages | umask; temporary file then atomic move |
@@ -308,7 +336,9 @@ expiry.
 
 **Temporary files.** The fixture writes each user's bearer token to a
 `Files.createTempFile` file - owner-only on POSIX by the JDK's own default -
-and deletes it in a `finally`. `LocalNetProbe` uses the FIXED directory
+and deletes it in a `finally`. `PqsInstallations` writes a scribe jar's
+`--version` output to a `Files.createTempFile` file and deletes it once
+read. `LocalNetProbe` uses the FIXED directory
 `${java.io.tmpdir}/localnet-probe`, whose name another local account can
 predict.
 
@@ -349,6 +379,17 @@ stays there after the stack stops.
 the population grants `participant_admin` act-as rights over them and revokes
 those grants as its last step (`PharmaSession`, `PharmaLedger.revokeActAs`). A
 population that fails part-way leaves them in place.
+
+**Scribe's reader and its client.** On Canton 3.x, when the form names no
+user, scribe reads as `raposza-pqs`, a ledger user the start fetches or else
+creates with `readAsAnyParty` - the right to read every party on the
+participant (`PqsReaderScript`). It stays on the participant and in every
+snapshot taken after it; a user of that id is taken to be this one, and its
+rights are not read back. With PQS on and the window's own provider already
+checking clients, the window registers scribe there as a confidential client
+under that user's id, with a random 24-byte secret made for the start
+(`MintRegistration.strRegisterScribe`); a provider that checks no clients is
+left as it is, because registering one client makes it check every caller.
 
 **Token lifetimes.** 24 h for a Sandbox-minted token on Canton 3.5.6 and later,
 and 240 s below that, where the participant refuses longer ones. A token the
@@ -393,8 +434,10 @@ OIDC's command line, which carries its admin password, is not logged.
   it keeps the whole query - section 4.
 
 **On the process list.** A command-line argument is readable by any account
-that can list processes: scribe's token and database password, and Raposza
-OIDC's admin password, are visible there while those processes run.
+that can list processes: scribe's token, client secret and database password,
+and Raposza OIDC's admin password, are visible there while those processes
+run. The line the registration of scribe's client leaves on the OIDC tab names
+the client and never the secret.
 
 What Canton, scribe, Raposza OIDC and `splice-node` log themselves was NOT
 established; their output is copied into the panes and the run directories.
@@ -480,16 +523,96 @@ of its bytes and checked against OSV.dev's advisories and this project's own
 record of them. A version above that is raised over what a library brings
 says which advisory in `platform/pom.xml`.
 
-**One known advisory is carried - 2026-10-06.** The Raposza OIDC server jar
-the Sandbox carries runs Spring Framework 6.2.19, which is affected by
-CVE-2026-47884: server-side request forgery and remote code execution through
-`XsltView`, when that view renders behind a `/**` mapping under an implicitly
-derived view name. The provider configures no `XsltView`, no view resolver
-and no template engine, and every one of its controllers returns a body;
-nothing in this repository uses Spring at all. What the dependencies register
-was not read. The fixed 6.2 release is available to Spring's commercial
-support customers only; the open-source fix is Spring Framework 7.0.9, which
-is Spring Boot 4.
+**What is carried, and why - read 2026-10-26 for 0.6.2.** Where a version
+with a known advisory stays, it stays on a recorded decision, and every one
+that reaches this repository's build is below. Each says what the advisory
+needs and whether this code gives it that. The sorting is read from each
+advisory's own description and from what this code builds and runs; the
+dependencies' code was not read - section 13.
+
+**1. Netty 4.1.100.Final - in both applications, at run time.** gRPC 1.60.0
+is the generation `com.daml:bindings-java` 2.9.6 resolves, and it declares
+Netty 4.1.100.Final. No gRPC release is paired with a fixed Netty 4.1, and
+Netty raised out of step with gRPC corrupted HTTP/2 framing when it was tried,
+so Netty stays at the version gRPC was built against. Neither application runs
+a gRPC or Netty server. Both are gRPC CLIENTS: the Sandbox of its own
+participant's Admin and Ledger APIs on `127.0.0.1`, a process it started
+itself; the Workbench of whatever participant its profile names, on loopback
+or not. TLS, where a profile asks for it, is the JDK's: gRPC's
+`useTransportSecurity()` with the JDK's default trust store, and no
+netty-tcnative in the build. OSV.dev records 38 advisories against six of its
+Netty jars:
+
+| advisories | what they need | here |
+| --- | --- | --- |
+| HTTP/1.1 request parsing and smuggling - GHSA-38f8-5428-x5cv, GHSA-m4cv-j2px-7723, GHSA-pwqr-wmgm-9rr8, GHSA-fghv-69vj-qj49, GHSA-xxqh-mfjm-7mv9; `HttpPostRequestDecoder` GHSA-5jpm-x58v-624v; `HttpContentEncoder` GHSA-q4f6-jm68-57ww; CORS GHSA-6cqp-g7gg-8hr5, GHSA-8c42-7qj2-3j46; the WebSocket handshaker GHSA-4mp9-239f-g9hg; `HttpContentDecompressor` GHSA-f6hv-jmp6-3vwv | an HTTP/1.1 server, or that handler in the pipeline | **not reached.** gRPC speaks HTTP/2 and puts none of these handlers in a client's pipeline |
+| HTTP/2 on the side that accepts streams - reset floods GHSA-563q-j3cm-6jxm and GHSA-prj3-ccx8-p6x4, `MAX_CONCURRENT_STREAMS` GHSA-5x3r-wrvg-rp6q, HTTP/2 to HTTP/1.x translation GHSA-c69g-56f8-xwqj | a server | **not reached.** Nothing here accepts a stream |
+| HTTP/2 decompression - GHSA-93wv-jw9v-4972, GHSA-c2gf-v879-257j | `DelegatingDecompressorFrameListener` | **not reached.** gRPC decompresses its messages itself |
+| Netty's compression decoders - GHSA-3p8m-j85q-pgmj, Bzip2 GHSA-558v-64gr-wgg4, Lz4 GHSA-mj4r-2hfc-f8p6 | those decoders in the pipeline | **not reached**, for the same reason |
+| SPDY - GHSA-6jqx-86gh-f27w, GHSA-mvh2-crg5-v77c, GHSA-jppx-w49h-x2qq | SPDY | **not reached.** Nothing here speaks it |
+| TLS and filtering on a server - SNI GHSA-c4c3-7fpv-j4q5, GHSA-fccg-mwvh-qqg4, GHSA-x4gw-5cx5-pgmh; `IpSubnetFilter` GHSA-3qp7-7mw8-wx86 | a server's `SniHandler` or subnet filter | **not reached** |
+| `SslHandler` with a native engine - GHSA-4g8c-wm8x-jfhw | netty-tcnative | **not reached.** The build carries none |
+| the multipart encoder - GHSA-gcjf-9mgh-3p7g | `HttpPostRequestEncoder` | **not reached.** Nothing here sends a form |
+| the HTTP/1.1 client and proxy handlers - GHSA-57rv-r2g8-2cj3, GHSA-84h7-rjj3-6jx4, GHSA-v8h7-rr48-vmmv, GHSA-hvcg-qmg6-jm4c, GHSA-45q3-82m4-75jr | an HTTP/1.1 exchange, which for gRPC is only the `CONNECT` to an HTTP proxy | **reached only through a proxy the JVM is given for the participant's host.** The `CONNECT` carries the host and port of the user's own profile; what answers it is the user's own proxy. A hostile proxy can desynchronise that exchange - GHSA-57rv-r2g8-2cj3 |
+| a file Netty reads on Windows - GHSA-xq3w-v528-46rv, GHSA-389x-839f-4rhx | a large file planted at that path | **reached on Windows by whoever can write that path**: a local account, inside the boundary of section 12. It crashes the application |
+| the HTTP/2 `CONTINUATION` flood - GHSA-w9fj-cfpg-grvv | a peer sending header frames | **REACHED.** A participant the Workbench connects to can make it spend CPU and memory on headers it never completes - a denial of service of the Workbench by the server it was pointed at. The Sandbox's peers are its own processes. L-17 |
+| a plain trust manager wrapped by Netty - GHSA-c653-97m9-rcg9 | a plain `X509TrustManager` handed to Netty | **NOT ESTABLISHED.** No profile hands Netty a trust manager of its own; whether gRPC's default path wraps one was not read |
+
+**2. Spring Framework 6.2.19 - inside the Raposza OIDC jar the Sandbox
+carries.** Two advisories. CVE-2026-47884, server-side request forgery and
+remote code execution through `XsltView`, needs that view rendering behind a
+`/**` mapping under an implicitly derived view name. CVE-2026-47890, stream
+corruption, needs view fragments sent over Server-Sent Events with data an
+attacker controls. The provider's own source has no `XsltView`, no view
+resolver, no `ModelAndView`, no template engine and no Server-Sent Events, and
+every one of its controllers returns a body. Spring Boot 3.5's MVC
+auto-configuration defines three view resolvers - `InternalResourceViewResolver`,
+`BeanNameViewResolver` and `ContentNegotiatingViewResolver` - and no XSLT one;
+that is read from Spring Boot's source on its 3.5 branch, not from a running
+provider, whose registered resolvers were not read. The fixed 6.2 release,
+6.2.20, is for Spring's commercial support customers only; the open-source fix
+is Spring Framework 7.0.9, which is Spring Boot 4. Nothing in this
+repository's own code uses Spring.
+
+**3. Logback 1.5.34, Log4j API 2.24.3 and Tomcat 10.1.55 - in the dependency
+list, not in what ships.** The Sandbox declares the provider's jar `provided`,
+so Maven lists that jar's graph at the versions Spring Boot 3.5.16 manages.
+The jar itself - the bytes on Maven Central, sha256
+`2da23d4e0019471c09f9c3851dd6f9bc4ff1256782a7655bde3c4551ec476dc7` - carries
+logback-core and logback-classic 1.5.38, log4j-api 2.25.5 and
+tomcat-embed-core 10.1.60, each at or above its fix: CVE-2026-13006 in
+Logback 1.5.37, CVE-2026-49844 in Log4j API 2.25.5, CVE-2026-65905,
+CVE-2026-65182 and CVE-2026-68525 in Tomcat 10.1.58. Raising the versions in
+this tree would change the list and no byte the Sandbox ships.
+
+**4. Build time only - what maven-site-plugin 3.22.0 brings: commons-beanutils
+1.9.4, Jetty 9.4.58 and jsoup 1.23.1.** The poms state the site plugin's
+version because the enforcer's plugin-version rule checks the site lifecycle
+too; without it Maven falls back to 3.3, which brought commons-collections
+3.2.1, commons-beanutils 1.7.0 and Velocity 1.5. No
+build path here runs `site`: not `build.sh`, not `test.sh`, not the release
+workflow. The advisories: CVE-2025-48734 in commons-beanutils; GHSA-355h-qmc2-wpwf,
+GHSA-qh8g-58pp-2wxh, GHSA-2fvj-hgj9-j2gr and GHSA-7p3p-8qv8-m2vh in Jetty 9.4,
+whose line has no fixed release; and CVE-2026-75140 in jsoup, which the
+build forces to 1.23.1 for CVE-2026-71497. CVE-2026-75140 is fixed in jsoup
+1.23.2, released 2026-08-26 by jsoup's own changelog; 0.6.2 does not raise it.
+
+**5. Plugins listed and not run by the build - and one the release workflow
+runs.** The list also holds plugins that are named and not executed: the
+versions Maven 3.8.7's own super-POM binds for maven-antrun-plugin 1.3,
+maven-assembly-plugin 2.2-beta-5, maven-dependency-plugin 2.8 and
+maven-release-plugin 2.5.3, with advisories in their old dependencies
+(commons-collections 3.2.1, commons-beanutils 1.7.0, plexus-utils 1.5.6 to
+3.0.15, Velocity 1.5, JSch, Ant 1.7.1, Groovy 1.7.6, JDOM 1.1 and others).
+That is a statement about `build.sh`, `test.sh` and the release workflow
+only: a goal invoked by hand - `mvn site`, `mvn dependency:tree` on the
+aggregator - runs that plugin with what it brings. **maven-help-plugin 3.5.1
+IS RUN**, by the release workflow's `help:evaluate`, which reads the version to
+check against the tag. It brings jsoup 1.17.2 (CVE-2026-75140, CVE-2026-71497),
+XStream 1.4.20 (CVE-2024-47072) and plexus-utils 4.0.1 (CVE-2025-67030). Its
+only input is this repository's own POM at the tagged commit, which the same
+run then builds: whoever could hand it hostile input could change the build
+itself.
 
 
 ## 10 - How a release is built, and how a consumer verifies it
@@ -549,8 +672,8 @@ owed.
   LocalNetND secret and token, a saved Workbench token (owner-only). Section 4.
 * **L-7 Plaintext channels by default.** The Workbench uses TLS only when the
   profile asks for it; the Admin API channel is plaintext on loopback.
-* **L-8 Some secrets are visible on the process list** - scribe's token and
-  database password, Raposza OIDC's admin password.
+* **L-8 Some secrets are visible on the process list** - scribe's token, client
+  secret and database password, Raposza OIDC's admin password.
 * **L-9 LocalNetND's tokens never expire, and its secret is served to the
   browser** in `/config.js` in HS256 mode, as the vendor's UIs require.
 * **L-10 Snapshots copy the whole database cluster**, including whatever keys
@@ -568,6 +691,14 @@ owed.
 * **L-15 The Daml-LF reader is loaded from an installed Canton's jar**, the
   newest open-source 3.5.1 or later on the machine, into both applications,
   without a digest check - section 1.
+* **L-16 Scribe is chosen from the DPM cache or the settings and run without a
+  digest check**, first with `--version` to read the line it claims, then as
+  PQS - section 1.
+* **L-17 Netty 4.1.100.Final stays, paired with gRPC 1.60.0**, and one of its
+  advisories is reached from the network: a participant the Workbench
+  connects to can deny it service with an HTTP/2 `CONTINUATION` flood,
+  GHSA-w9fj-cfpg-grvv. Point the Workbench at participants you trust -
+  section 9.
 
 
 ## 12 - The trust boundary, stated plainly
@@ -610,6 +741,10 @@ not point it at a credential you would mind publishing.
 * **The dependency check is a lookup, not an analysis.** Each coordinate in
   section 9's transitive closure is looked up in OSV.dev's advisories and in
   this project's own record of them; nothing reads the dependencies' code.
+  Whether this code reaches an advisory, in section 9, is read from the
+  advisory's own description and from what this code builds; Netty's code,
+  the plugins' code and the running provider's registered view resolvers
+  were not read.
 * **No scanner output exists** - no static analysis, no secret scan of the
   build output.
 * **No third party** has reviewed any of it.

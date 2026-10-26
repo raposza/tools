@@ -1,9 +1,9 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Author Claude/bentzn  Generated 2026-10-16T08:55:00Z  Updated 2026-10-17T05:30:00Z -->
-# Raposza Tools 0.6.1 — skill document for an AI assistant
+<!-- Author Claude/bentzn  Generated 2026-10-16T08:55:00Z  Updated 2026-10-26T18:45:00Z -->
+# Raposza Tools 0.6.2 — skill document for an AI assistant
 
-This document is written for an AI assistant, such as Claude, that guides a person through installing and using Raposza Sandbox and Raposza Workbench. It replaces the READMEs for that purpose. Everything here describes Raposza Tools 0.6.1, the release at <https://github.com/raposza/tools/releases/tag/v0.6.1>.
+This document is written for an AI assistant, such as Claude, that guides a person through installing and using Raposza Sandbox and Raposza Workbench. It replaces the READMEs for that purpose. Everything here describes Raposza Tools 0.6.2, the release at <https://github.com/raposza/tools/releases/tag/v0.6.2>.
 
 ---
 
@@ -11,7 +11,7 @@ This document is written for an AI assistant, such as Claude, that guides a pers
 
 * **Start with section 1, every time: give the person the choice, and recommend path A.** Path A is clone the source, audit it, build it locally, run. Path B is download the released jars and run. Recommend A before anything else, and most of all when the person is on a restricted computer in a corporate network: security is a high priority for Raposza. Say why in one or two sentences (section 1), then let the person choose, and follow the path they choose without arguing it again.
 * **Ask before you guide.** You need to know the operating system (Linux or Windows), whether the machine may reach the internet (GitHub, Maven Central, `get.digitalasset.com`), whether Java 21 or newer is installed, and whether corporate policy restricts what may be downloaded or run.
-* **Do not invent.** Every argument, button, tab, path and port in this document was read from the 0.6.1 source. If the person asks for something not described here, say so. Do not guess a flag or a menu item. The source tree is the authority: point to the file that settles the question.
+* **Do not invent.** Every argument, button, tab, path and port in this document was read from the 0.6.2 source. If the person asks for something not described here, say so. Do not guess a flag or a menu item. The source tree is the authority: point to the file that settles the question.
 * **One step at a time.** Give one command or one action, then wait for the result. On Linux commands run in a shell; on Windows they run in PowerShell. Nothing in Raposza needs administrator rights.
 * **Ask for evidence.** When something fails, ask for the exact text: the terminal output, or the window's **Debug** tab (section 4.9). The Sandbox reports what it is doing in its log, line by line.
 * **Say what the person is exposing.** Raposza is developer tooling for one workstation and is not hardened (section 12). Before the person runs it on a shared machine, make sure they have read that section.
@@ -46,10 +46,10 @@ The build fetches its dependencies and plugins from Maven Central, so it needs a
 ```
 git clone https://github.com/raposza/tools.git
 cd tools
-git checkout v0.6.1
+git checkout v0.6.2
 ```
 
-The Sandbox embeds a second product, **Raposza OIDC**, the local OpenID Provider. Its source is a separate repository, <https://github.com/raposza/OIDC>. Tools 0.6.1 uses Raposza OIDC **0.5.1**, the value of `raposza.oidc.version` in `platform/pom.xml`. A plain Tools build takes that jar from Maven Central. To audit and build it as well, clone that repository, check out the tag for 0.5.1 and follow its own build instructions. Installing it into the local Maven repository (`mvn install`) makes the Tools build below use that build instead of the copy from Central.
+The Sandbox embeds a second product, **Raposza OIDC**, the local OpenID Provider. Its source is a separate repository, <https://github.com/raposza/OIDC>. Tools 0.6.2 uses Raposza OIDC **0.5.1**, the value of `raposza.oidc.version` in `platform/pom.xml`. A plain Tools build takes that jar from Maven Central. To audit and build it as well, clone that repository, check out the tag for 0.5.1 and follow its own build instructions. Installing it into the local Maven repository (`mvn install`) makes the Tools build below use that build instead of the copy from Central.
 
 ### 1.3 Path A - what to audit
 
@@ -86,11 +86,11 @@ mvn install -Papp
 `build.sh` is `mvn install -DskipTests`. `test.sh` is `mvn install -Papp`, plus a check that every module with tests actually ran them. The suite is headless and needs no Canton. `-Papp` builds the two application jars, which carry their dependencies:
 
 ```
-apps/sandbox/target/sandbox-0.6.1-app.jar
-apps/workbench/target/workbench-0.6.1-app.jar
+apps/sandbox/target/sandbox-0.6.2-app.jar
+apps/workbench/target/workbench-0.6.2-app.jar
 ```
 
-From here on, wherever this document says `sandbox-0.6.1-app.jar` or `workbench-0.6.1-app.jar`, use these files.
+From here on, wherever this document says `sandbox-0.6.2-app.jar` or `workbench-0.6.2-app.jar`, use these files.
 
 ### 1.5 Path A - run
 
@@ -99,7 +99,7 @@ Section 3. On Linux the repository root also has launchers: `./run-sandbox.sh` (
 ### 1.6 Path B - download and run
 
 1. Verify Java: `java -version` must show 21 or newer. If it does not, Java is available from <https://www.oracle.com/java/technologies/downloads/>.
-2. Download 3 files, `sandbox-0.6.1-app.jar`, `workbench-0.6.1-app.jar` and `SHA256SUMS`, from <https://github.com/raposza/tools/releases/tag/v0.6.1> into the Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
+2. Download 3 files, `sandbox-0.6.2-app.jar`, `workbench-0.6.2-app.jar` and `SHA256SUMS`, from <https://github.com/raposza/tools/releases/tag/v0.6.2> into the Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
 3. Check the hashes. Both jars must report `OK`.
 
 Linux:
@@ -140,8 +140,8 @@ This release is tested with Java 21 or newer, Daml SDK 3.6.0, and Splice 0.8.3 a
 Linux and Windows, from the folder holding the jars - `apps/sandbox/target` and `apps/workbench/target` on path A, the Downloads folder on path B:
 
 ```
-java -jar sandbox-0.6.1-app.jar
-java -jar workbench-0.6.1-app.jar
+java -jar sandbox-0.6.2-app.jar
+java -jar workbench-0.6.2-app.jar
 ```
 
 Each in its own terminal or PowerShell window. Arguments go after the jar name (sections 5 and 7).
@@ -168,7 +168,7 @@ On the left the card **Sandbox** holds the form, four buttons and the snapshot l
 | --- | --- |
 | **SDK** + **Install** | Which installed SDK, and so which Canton, the stack runs. Rows read `SDK 3.5.5   Canton 3.5.12`; `SDK -` is a Canton no SDK on the machine ships; a row marked `[no runtime jar]` is greyed out and cannot start; `[unmeasured]` marks a version not yet measured. The newest version that can start is selected when the window opens. Changing it swaps the whole profile (section 4.11). **Install** is section 4.4 |
 | **Splice** + **Install** | LocalNetND only: which installed Splice bundle the network runs. **Install** is section 4.5 |
-| **PQS** | `OFF` or `ON`. Whether to run PQS (scribe), which streams the ledger into PostgreSQL for SQL queries. Starts OFF every time and is never saved. What runs depends on what is installed: the vendor scribe where one exists for the Canton line, a stand-in on the 2.10 line, an in-process mock otherwise. On a first start with no parties, scribe waits with "No parties found matching *" until a party exists; that is a wait, not a hang |
+| **PQS** | `OFF` or `ON`. Whether to run PQS (scribe), which streams the ledger into PostgreSQL for SQL queries. Starts OFF every time and is never saved. What runs is the vendor scribe for the Canton line: one staged under `.pqs` in the home directory, else the one DPM installed, found in DPM's cache whatever the jar is called, else the jar **PQS scribe.jar** on the Settings tab names; a stand-in on the 2.10 line; an in-process mock otherwise. When it is the mock, the main log says why: "The Sandbox is not able to start PQS: ... The PQS mock is running instead." With auth on, scribe reads as the user the form names, or on Canton 3.x as `raposza-pqs`, which the start creates with `readAsAnyParty` when the participant lacks it; nothing has to be filled in. On a first start with no parties, scribe waits with "No parties found matching *" until a party exists; that is a wait, not a hang |
 | **First port** | The lowest port of the stack; every other port follows it in a fixed order. In the 30xxx range |
 | **PostgreSQL port** | Where the embedded PostgreSQL listens. Canton's databases and PQS's are all inside it |
 | **Ready timeout s** | How long each component may take to report ready, in whole seconds. About 45 s for a participant on a fast workstation, nearer three minutes on a modest machine, longer on a first 2.x start. Raise it before concluding a start is broken |
@@ -267,6 +267,7 @@ Global settings, not per version. Edits save themselves 600 ms after the last ke
 | Installations | DAML Assistant directory | `dir.daml` | the root of `daml` on `PATH`, else `~/.daml` or `%APPDATA%\daml` |
 | | DPM directory | `dir.dpm` | `DPM_HOME`, then the root of `dpm` on `PATH`, else `~/.dpm` or `%APPDATA%\dpm` |
 | | Splice directory | `dir.splice` | `~/.splice` or `%USERPROFILE%\.splice` |
+| | PQS scribe.jar | `file.pqs` | blank: the DPM cache only |
 
 What to know about them:
 
@@ -276,6 +277,7 @@ What to know about them:
 * **PostgreSQL port**, **First stack port** and **Ready timeout s** are the defaults a version gets before it has a saved profile. LocalNetND has no profile, so for it they ARE the values. Moving LocalNetND's first port moves its founding snapshot, so the next start founds again.
 * **First web UI port**: LocalNetND only. sv, app-provider and app-user are on it and the next two ports ten apart.
 * **DPM directory** takes DPM's root (holding `bin` and `cache`), or the directory the `dpm` launcher sits in. A root set here wins over `DPM_HOME` and `PATH`. The installers do not follow the DAML Assistant and DPM directories; a Splice install does land in the Splice directory. LocalNetND's run directory stays `~/.splice/native-localnet` whatever is set.
+* **PQS scribe.jar** takes a scribe jar by its full path, for a Canton line DPM has no scribe for; its file name does not matter. The jar is asked for its version and used only for the Canton line it belongs to. Started on another line, the main log says "PQS mismatched: ..." and the PQS mock runs.
 * **The external provider URL** is on the OIDC tab (section 8.4) and stored as `oidc.url`.
 
 ### 4.11 The SDK box decides everything below it
@@ -289,12 +291,12 @@ The form's values are remembered per version and edition, in `~/.raposza/profile
 Without `--cli` the window opens, and every other argument pre-fills its form. With `--cli` the stack runs in the terminal, touches no window code, and Ctrl-C stops it. `--help` and `--list` print and stop either way.
 
 ```
-java -jar sandbox-0.6.1-app.jar --help
-java -jar sandbox-0.6.1-app.jar --list
-java -jar sandbox-0.6.1-app.jar --cli
-java -jar sandbox-0.6.1-app.jar --cli --canton 3.5.14
-java -jar sandbox-0.6.1-app.jar --cli --auth JWKS --discovery 32001
-java -jar sandbox-0.6.1-app.jar --cli --fixture --auth JWKS --discovery 32001
+java -jar sandbox-0.6.2-app.jar --help
+java -jar sandbox-0.6.2-app.jar --list
+java -jar sandbox-0.6.2-app.jar --cli
+java -jar sandbox-0.6.2-app.jar --cli --canton 3.5.14
+java -jar sandbox-0.6.2-app.jar --cli --auth JWKS --discovery 32001
+java -jar sandbox-0.6.2-app.jar --cli --fixture --auth JWKS --discovery 32001
 ```
 
 On Linux in a clone, `./run-sandbox.sh` takes the same arguments.
@@ -353,8 +355,8 @@ The window opens on the connection dialog, **Connect to**:
 From the command line:
 
 ```
-java -jar workbench-0.6.1-app.jar --discovery http://127.0.0.1:32001/
-java -jar workbench-0.6.1-app.jar <path-to-ledger_hosts>
+java -jar workbench-0.6.2-app.jar --discovery http://127.0.0.1:32001/
+java -jar workbench-0.6.2-app.jar <path-to-ledger_hosts>
 ```
 
 The first opens directly on a Sandbox. The second pre-fills the standalone form from a participant catalogue; without an argument the catalogue is `~/.raposza/ledger_hosts`, and a missing one is not an error. The format is in `ledger_hosts.example` at the repository root:
@@ -428,7 +430,7 @@ Scope and audience are mutually exclusive; a profile carrying both is refused. T
 The Workbench jar runs a CaQL script headless:
 
 ```
-java -jar workbench-0.6.1-app.jar --script FILE --transcript FILE [--profile NAME] [--validate] [--catalogue FILE]
+java -jar workbench-0.6.2-app.jar --script FILE --transcript FILE [--profile NAME] [--validate] [--catalogue FILE]
 ```
 
 * The participant comes from the catalogue (section 6.1): `--catalogue`, else `~/.raposza/ledger_hosts`. `--profile` names the line, and is required when the catalogue has more than one. The line must say `rw` for a script that writes.
@@ -543,7 +545,7 @@ The document's `auth.token` URL already carries the audience or scope, the lifet
 | Mint | a form over `/mint`, with the token decoded beside it |
 | Inspect | paste a token: header, claims, expiry, whether this key set signed it — and, with a JWKS pasted, whether that one does |
 
-Key, user and client management needs the admin credential, `admin` / `123456` as the window starts it. **Inspect** is the page for an authentication failure: an issuer, an audience or a key that does not match is refused by a participant with no detail, and Inspect shows which.
+Key, user and client management needs the admin credential, `admin` / `123456` as the window starts it. With PQS on, when the provider already has a client registered, the window registers scribe as a confidential client - the PQS user as its `client_id`, a secret made for that start - and says so on **OIDC → Provider**; a provider with no clients checks none, and nothing is registered. **Inspect** is the page for an authentication failure: an issuer, an audience or a key that does not match is refused by a participant with no detail, and Inspect shows which.
 
 **An external provider.** A base URL in **OIDC → Provider → External OIDC url**, with **Apply**, starts nothing: the window reads that provider's discovery document, configures the participant with the `jwks_uri` it publishes, and reports `mode: external`. It need not be Raposza OIDC. **Mint JWT** and **Refresh users** are off against it, because `/mint.txt` is Raposza OIDC's own. Below Canton 3.5.6 the participant caps token lifetimes itself, so a provider that cannot issue short tokens will have every token refused there. The change takes effect on the next start.
 
@@ -605,7 +607,7 @@ A `--cli` stack writes `sandbox.properties` in its work directory while it runs,
 
 ## 9. CaQL — complete reference
 
-This is the text of the Workbench's **Skills** page in 0.6.1, unchanged. For any other version, the Skills page of the running Workbench is the authority.
+This is the text of the Workbench's **Skills** page in 0.6.2, unchanged. For any other version, the Skills page of the running Workbench is the authority.
 
 ```
 CaQL - COMPLETE REFERENCE
@@ -1036,6 +1038,7 @@ Vulnerabilities are reported to **info@raposza.com**, not in a public issue.
 * **Read the log first.** The Sandbox tab's log says what the window is doing; the **Debug** tab has one log per process. Ask the person to copy the lines around the first error.
 * **The SDK or Splice box is empty.** Nothing is installed where the window looks. Install from the window (sections 4.4, 4.5), or set the directory on the Settings tab.
 * **A version is greyed out** in the SDK box: it has no runtime jar.
+* **PQS runs the mock.** The main log says why, in a line beginning "The Sandbox is not able to start PQS:". Install the SDK through DPM (section 4.4), or set **PQS scribe.jar** on the Settings tab.
 * **Restarting a stack straight after stopping it**: the window waits for its own PostgreSQL port, which the stopped server holds for about a minute.
 * **The Workbench cannot connect to a local Sandbox**: the Sandbox window must be open, and the port in the dialog must match the **Discovery port** on the Sandbox's Settings tab. `curl http://127.0.0.1:32001/` shows what the Sandbox publishes.
 * **Windows, the embedded PostgreSQL does not unpack**: the Sandbox retries in `raposza-tmp` beside the jar by itself.

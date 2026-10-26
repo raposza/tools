@@ -94,4 +94,25 @@ class SettingsPaneInstallationsTest {
         assertNull(RaposzaSettings.reload().dirDpm());
         assertEquals(dirTmp.resolve("daml"), RaposzaSettings.current().dirDaml());
     }
+
+
+    /** raposza/tools#4: the jar row saves a full path and refuses a relative one. */
+    @Test
+    void thePqsJarRowSavesAFullPathOnly(@TempDir Path dirTmp) {
+        strWas = System.getProperty(RaposzaSettings.STR_PROP_FILE);
+        System.setProperty(RaposzaSettings.STR_PROP_FILE,
+                dirTmp.resolve("settings.properties").toString());
+        RaposzaSettings.reload();
+        pane = new SettingsPane();
+
+        assertEquals("", pane.fieldOf(RaposzaSettings.STR_KEY_FILE_PQS).getText());
+        Path fileJar = dirTmp.resolve("vendor").resolve("pqs.jar");
+        pane.fieldOf(RaposzaSettings.STR_KEY_FILE_PQS).setText(fileJar.toString());
+        pane.saveIfValid();
+        assertEquals(fileJar, RaposzaSettings.reload().filePqs());
+
+        pane.fieldOf(RaposzaSettings.STR_KEY_FILE_PQS).setText("pqs.jar");
+        pane.saveIfValid();
+        assertEquals(fileJar, RaposzaSettings.reload().filePqs());
+    }
 }

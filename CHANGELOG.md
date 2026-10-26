@@ -2,6 +2,27 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Changelog
 
+## 0.6.2 - 2026-10-26
+
+* **PQS from DPM, on every platform.** With PQS on, the Sandbox runs the
+  scribe DPM installed for the Canton line being started, found in DPM's own
+  cache - `%APPDATA%\dpm` on Windows - whatever the jar is called. On a
+  machine where nobody had staged scribe by hand, every PQS start ran the mock.
+  Where DPM has none, the new **PQS scribe.jar** row on the Settings tab names
+  a scribe jar by its full path; it is used only for the Canton line its own
+  `--version` names, and on another line the Sandbox says PQS is mismatched.
+  When PQS cannot start, the main log says why and that the PQS mock is
+  running instead.
+* **PQS authenticated, with nothing to fill in.** On Canton 3.x, when the form
+  names no user, scribe reads as the ledger user `raposza-pqs`, which the start
+  creates with the right to read every party when the participant does not
+  have it yet. Where the window's identity provider checks clients, scribe is
+  registered there as a client with a secret made for that start; before,
+  scribe's token was refused and PQS stopped at start.
+* **Save snapshot no longer freezes the window.** Save snapshot and the
+  founding snapshot copy the database off the window's event thread; Start,
+  Save, the snapshot list and Close wait until the copy ends.
+
 ## 0.6.1 - 2026-10-14
 
 * **Snapshots wait for PostgreSQL to exit.** The founding snapshot and Save

@@ -4,12 +4,16 @@ package com.raposza.sandbox.app;
 
 import com.raposza.runtime.localnet.LocalNetUi;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -51,6 +55,17 @@ import java.util.Set;
  * state a hand registration already left, stated here so it is not
  * rediscovered.
  *
+ * <h2>And scribe is a client too - raposza/tools#4</h2>
+ *
+ * On the single participant scribe takes client credentials and mints its own
+ * tokens, renewing them before they expire. With the registry checking clients
+ * its id - the PQS ledger user - was unknown and the token endpoint answered
+ * 401, measured at his console 2026-10-26 against a store holding `conf1`,
+ * `conf2`, `conf3`, `localnet-ui` and `rawar`. So the window registers it, as
+ * a CONFIDENTIAL client with a secret made for that start, before scribe runs -
+ * {@link #strRegisterScribe}. Only when the registry already checks clients:
+ * registering into an open one would close it for every other caller.
+ *
  * Author Claude/bentzn
  */
 public final class MintRegistration {
@@ -63,6 +78,19 @@ public final class MintRegistration {
     public static final String STR_PATH_CLIENTS = "/api/ui/clients";
 
     private static final Duration DUR_REQUEST = Duration.ofSeconds(10);
+
+    /**
+     * A client the provider can be sent back to, which a machine client never
+     * is. The provider refuses a client with no `redirect_uri` at all, and
+     * nothing listens here.
+     */
+    public static final String STR_REDIRECT_NONE = "http://127.0.0.1/no-redirect";
+
+    private static final int N_BYTES_SECRET = 24;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
 
     private MintRegistration() {
@@ -120,6 +148,62 @@ public final class MintRegistration {
     public static String strBodyClient(List<String> lstRedirect) {
         return "{\"client_id\":\"" + esc(STR_CLIENT_UI) + "\",\"secret\":\"\","
                 + "\"redirect_uris\":\"" + esc(String.join(" ", lstRedirect)) + "\"}";
+    }
+
+
+    /**
+     * @return a fresh client secret, URL-safe, for one start
+     */
+    public static String strSecretNew() {
+        byte[] arrBytes = new byte[N_BYTES_SECRET];
+        RANDOM.nextBytes(arrBytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(arrBytes);
+    }
+
+
+    /**
+     * @param idClient the client id - for scribe, the PQS ledger user
+     * @param strSecret its secret
+     * @return the body `/api/ui/clients` takes for a confidential machine client
+     */
+    public static String strBodyClientConfidential(String idClient, String strSecret) {
+        return "{\"client_id\":\"" + esc(idClient) + "\",\"secret\":\"" + esc(strSecret)
+                + "\",\"redirect_uris\":\"" + esc(STR_REDIRECT_NONE) + "\"}";
+    }
+
+
+    /**
+     * Registers scribe as a confidential client IF the provider checks clients
+     * - see the type comment. An open provider accepts any client and any
+     * secret, so the same secret serves either way.
+     *
+     * @param strUrlBase the provider, no trailing slash
+     * @param idClient the client id scribe presents, the PQS ledger user
+     * @param strSecret the secret scribe presents
+     * @return one line for the window's log, never the secret
+     * @throws IOException when the provider refuses or cannot be reached
+     * @throws InterruptedException when interrupted while waiting
+     */
+    public static String strRegisterScribe(String strUrlBase, String idClient, String strSecret)
+            throws IOException, InterruptedException {
+        HttpClient client = HttpClient.newBuilder().connectTimeout(DUR_REQUEST).build();
+        HttpResponse<String> resList = client.send(HttpRequest.newBuilder(
+                URI.create(strUrlBase + STR_PATH_CLIENTS)).timeout(DUR_REQUEST)
+                .header("Authorization", strAuthBasic()).GET().build(),
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (resList.statusCode() / 100 != 2) {
+            throw new IOException("GET " + STR_PATH_CLIENTS + " answered "
+                    + resList.statusCode() + ": " + resList.body());
+        }
+        JsonNode nodeList = MAPPER.readTree(resList.body());
+        if (!nodeList.path("strict").asBoolean(false)) {
+            return "PQS client " + idClient
+                    + ": the provider checks no clients, nothing registered";
+        }
+
+        post(client, strUrlBase + STR_PATH_CLIENTS,
+                strBodyClientConfidential(idClient, strSecret));
+        return "PQS client " + idClient + " - confidential, secret made for this start";
     }
 
 

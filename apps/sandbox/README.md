@@ -39,8 +39,10 @@ directory".
 a DOMAIN, no sequencer/mediator split - and the options belonging to the 3.x
 launchers are reported as ignored there rather than dropped in silence, which is
 the shape of defect measured on scribe's own flag. PQS resolves per line:
-vendor scribe where one is staged, the 2.x stand-in on `line/2.10`, and the
-in-process mock otherwise.
+vendor scribe where one is staged, the 2.x stand-in on `line/2.10`, else the scribe
+DPM installed for the line, from its cache, else the jar `file.pqs` names in the
+settings when its own `--version` names the line, and the in-process mock
+otherwise.
 
 It starts the newest installed Canton on line 3.5 by default, on Canton's own port block,
 with an embedded PostgreSQL on 33321 and a temporary cluster. The status file

@@ -148,6 +148,9 @@ public final class FieldHelp {
     /** Settings tab. Existing Splice bundles - todo.md A-45. */
     public static final String KEY_SET_DIR_SPLICE = "dir.splice";
 
+    /** Settings tab. A scribe jar where the DPM cache has none - raposza/tools#4. */
+    public static final String KEY_SET_FILE_PQS = "file.pqs";
+
     public static final String KEY_SET_PORT_MINT = "port.mint";
 
     /** Settings tab. This application's own; no vendor documents it. */
@@ -520,6 +523,20 @@ public final class FieldHelp {
                 + "A Splice install from this window lands here. LocalNetND's run"
                 + " directory stays in ~/.splice/native-localnet whatever this"
                 + " says.",
+                null, null);
+
+        put(KEY_SET_FILE_PQS,
+                "A scribe jar for PQS, where DPM has none.",
+                "PQS runs the scribe that DPM installed for the Canton line being"
+                + " started, found in its cache - nothing needs setting for"
+                + " that.\n\n"
+                + "Where DPM has none, name a scribe jar here by its full path."
+                + " Its file name does not matter. The jar is asked for its"
+                + " version, and it is used only for the Canton line it belongs"
+                + " to: started on another line, the Sandbox says PQS is"
+                + " mismatched and runs the PQS mock.\n\n"
+                + "Blank uses the DPM cache only. With nothing found, the Sandbox"
+                + " says it is not able to start PQS and runs the PQS mock.",
                 null, null);
 
         put(KEY_SET_PORT_DISCOVERY,

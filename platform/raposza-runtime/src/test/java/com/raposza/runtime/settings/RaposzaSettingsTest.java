@@ -376,7 +376,7 @@ class RaposzaSettingsTest {
                 settings.nPortFirst(), settings.nPortPostgres(), settings.nSecondsReady(),
                 settings.flagOfferAviation(), settings.flagOfferPharma(), settings.strUrlOidc(),
                 nPortUiFirst, settings.dirDaml(), settings.dirDpm(), settings.dirSplice(),
-                settings.nPortRawar());
+                settings.nPortRawar(), settings.filePqs());
     }
 
 
@@ -417,6 +417,43 @@ class RaposzaSettingsTest {
         assertEquals(settings, settingsBack);
         assertEquals("", RaposzaSettings.ofDefaults().toProperties()
                 .getProperty(RaposzaSettings.STR_KEY_DIR_SPLICE));
+    }
+
+
+    /** raposza/tools#4: a scribe jar by its full path, blank for none. */
+    @Test
+    void the_pqs_jar_round_trips_and_is_blank_by_default(@TempDir Path dirTmp)
+            throws IOException {
+        assertNull(RaposzaSettings.ofDefaults().filePqs());
+        assertEquals("", RaposzaSettings.ofDefaults().toProperties()
+                .getProperty(RaposzaSettings.STR_KEY_FILE_PQS));
+
+        Path fileJar = dirTmp.resolve("vendor").resolve("any-name.jar");
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_FILE_PQS, fileJar.toString());
+        RaposzaSettings settings = RaposzaSettings.read(write(dirTmp, props));
+        assertEquals(fileJar, settings.filePqs());
+        assertEquals(settings, RaposzaSettings.ofProperties(settings.toProperties(),
+                RaposzaSettings.ofDefaults()));
+    }
+
+
+    /** A relative jar path is refused by the constructor and forgiven by the file. */
+    @Test
+    void the_pqs_jar_must_be_a_full_path(@TempDir Path dirTmp) throws IOException {
+        RaposzaSettings settings = RaposzaSettings.ofDefaults();
+        assertThrows(IllegalArgumentException.class,
+                () -> new RaposzaSettings(settings.dirHome(), settings.nPortMint(),
+                        settings.nPortDiscovery(), settings.strLine(), settings.strLauncher(),
+                        settings.nPortFirst(), settings.nPortPostgres(),
+                        settings.nSecondsReady(), settings.flagOfferAviation(),
+                        settings.flagOfferPharma(), settings.strUrlOidc(),
+                        settings.nPortUiFirst(), null, null, null, settings.nPortRawar(),
+                        Path.of("scribe.jar")));
+
+        Properties props = new Properties();
+        props.setProperty(RaposzaSettings.STR_KEY_FILE_PQS, "relative/scribe.jar");
+        assertNull(RaposzaSettings.read(write(dirTmp, props)).filePqs());
     }
 
 

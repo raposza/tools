@@ -176,4 +176,25 @@ class PqsSpecTest {
         assertFalse(spec.isCanton2x());
         assertThrows(IllegalStateException.class, () -> spec.withCantonLine("2.10"));
     }
+
+
+    /** raposza/tools#4: the person is told the Sandbox cannot start PQS and the mock runs. */
+    @Test
+    void aMockWithAReasonSaysSoAndKeepsSayingItThroughTheWithers() {
+        PqsSpec spec = new PqsSpec(null, "3.5", null, null, null, null, 0, null,
+                "there is no scribe for Canton 3.5").withPrefix("pqs_x").withToken("t");
+        assertEquals("The Sandbox is not able to start PQS: there is no scribe for Canton 3.5."
+                + " The PQS mock is running instead.", spec.strNotice());
+    }
+
+
+    @Test
+    void aMockNobodyLookedForAndARealSpecSayNothing() {
+        assertNull(PqsSpec.ofMock("3.5").strNotice());
+        PqsInstallation inst = new PqsInstallation(VersionId.of(3, 5, 8), "3.5",
+                Path.of("/x/scribe.jar"), "041", null, PqsSource.DPM);
+        PqsSpec spec = new PqsSpec(inst, null, null, null, null, null, 0, null, "ignored");
+        assertNull(spec.strWhyMock());
+        assertNull(spec.strNotice());
+    }
 }

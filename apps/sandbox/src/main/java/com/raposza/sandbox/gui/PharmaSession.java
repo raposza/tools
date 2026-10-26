@@ -708,7 +708,7 @@ public final class PharmaSession {
                 settingsNow.flagOfferAviation(), false, settingsNow.strUrlOidc(),
                 settingsNow.nPortUiFirst(),
                 settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice(),
-                settingsNow.nPortRawar());
+                settingsNow.nPortRawar(), settingsNow.filePqs());
         try {
             RaposzaSettings.store(settingsNew);
             say.accept("The Pharma offer is off. The Settings tab turns it back on.");

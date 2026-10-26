@@ -422,6 +422,16 @@ public final class SandboxWindow extends JFrame {
     private transient boolean flagAviationBusy;
 
     /**
+     * A snapshot is being copied - `todo.md` A-83, his observation of
+     * 2026-10-13: "UI freezes while it runs." The copy and the wait for
+     * PostgreSQL to let go of the cluster run on their own thread now, and the
+     * window sits in STOPPED throughout, so Start, Save and the snapshot list
+     * are held by this flag rather than by the state: a start laid on a
+     * cluster that is still being copied out would change what is copied.
+     */
+    private transient boolean flagSnapshotBusy;
+
+    /**
      * The same, for Pharma. Two flags rather than one: the two fixtures are
      * offered on different topologies and a shared flag would read as a state
      * neither of them is in.
@@ -3356,6 +3366,15 @@ public final class SandboxWindow extends JFrame {
                 // would remove that, and it is A-34's work rather than this
                 // instruction's.
                 PqsSpec spec = LocalNetPqs.specFor(instStock.version(), strToken, null);
+                // THE MOCK IS SAID, in the main log as well as the tab - his
+                // instruction of 2026-10-26, raposza/tools#4.
+                String strNotice = spec.strNotice();
+                if (strNotice != null) {
+                    SwingUtilities.invokeLater(() -> {
+                        pqsSay(strNotice);
+                        milestone(strNotice);
+                    });
+                }
                 ScribeProcess procNew = LocalNetPqs.processFor(spec,
                         LocalNetRunner.STR_HOST, portsHere, dirWork);
                 procNew.addOutputListener(strLine -> {
@@ -3452,6 +3471,13 @@ public final class SandboxWindow extends JFrame {
     private static final String STR_USER_PQS = "participant_admin";
 
     /**
+     * The user scribe reads as on the 3.x column when the form names none -
+     * raposza/tools#4. The bootstrap fetches it or creates it with
+     * `readAsAnyParty`, so authenticated PQS needs nothing typed in.
+     */
+    static final String STR_USER_PQS_READER = "raposza-pqs";
+
+    /**
      * Which ledger user PQS speaks as, and it is NOT `participant_admin` on
      * the 3.x column.
      *
@@ -3468,6 +3494,11 @@ public final class SandboxWindow extends JFrame {
      * `readAsAnyParty = true` precisely for this, so when the form
      * named a party and a user, that user is the one PQS has to be.
      *
+     * AND WHEN IT NAMES NONE, {@link #STR_USER_PQS_READER} - raposza/tools#4,
+     * his instruction of 2026-10-26: "PQS _must_ be authenticated. The user
+     * should not have to fill that in!" The bootstrap fetches that user, or
+     * creates it with `readAsAnyParty`, before scribe starts.
+     *
      * THE 2.x COLUMN KEEPS `participant_admin`. `--party` and `--user` are
      * reported as IGNORED there because that arm runs no such bootstrap, so the
      * user the form names does not exist on it.
@@ -3475,10 +3506,49 @@ public final class SandboxWindow extends JFrame {
      * @param optionsHere what this run was asked for
      * @return the user id the PQS token's `sub` carries
      */
+    /**
+     * Registers scribe's client at the window's own provider - see
+     * `MintRegistration.strRegisterScribe`. ON THE START THREAD: it is two
+     * requests to a service that has just answered a mint.
+     *
+     * A REGISTRATION THAT FAILS DOES NOT STOP THE START. PQS is the extra
+     * here, the participant is not, and scribe then says itself that its
+     * token was refused. The failure is said on the OIDC tab and in the main
+     * log.
+     *
+     * @param strUserPqs the PQS ledger user, which is the client id
+     * @return the secret scribe presents, or null for an external provider,
+     *         which is not this window's to write to
+     */
+    private String strSecretPqsRegistered(String strUserPqs) {
+        if (JwtMintProcess.isExternal())
+            return null;
+        String strSecret = MintRegistration.strSecretNew();
+        String strLine;
+        try {
+            strLine = MintRegistration.strRegisterScribe(JwtMintProcess.strUrlBase(), strUserPqs,
+                    strSecret);
+        }
+        catch (IOException ex) {
+            strLine = "PQS client registration FAILED, scribe's token may be refused - "
+                    + ex.getMessage();
+            String strMilestone = strLine;
+            SwingUtilities.invokeLater(() -> milestone(strMilestone));
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            strLine = "PQS client registration interrupted";
+        }
+        String strNote = strLine;
+        SwingUtilities.invokeLater(() -> paneJwt.note(strNote));
+        return strSecret;
+    }
+
+
     private static String strUserPqs(SandboxOptions optionsHere) {
         if (optionsHere.version().major() == 2)
             return STR_USER_PQS;
-        return optionsHere.strUserId() == null ? STR_USER_PQS : optionsHere.strUserId();
+        return optionsHere.strUserId() == null ? STR_USER_PQS_READER : optionsHere.strUserId();
     }
 
     /** How long the start thread waits for the JWT service to answer. */
@@ -4029,6 +4099,12 @@ public final class SandboxWindow extends JFrame {
                     boolean flagPqs = options.pqs() != SandboxOptions.PqsMode.OFF;
                     if (flagPqs) {
                         String strUserPqs = strUserPqs(options);
+                        // THE USER IS MADE SURE OF ON THE PARTICIPANT, by the
+                        // bootstrap, before scribe asks for it - only when it
+                        // is ours. A user the form names is already created
+                        // with `readAsAnyParty` by the form's own provisioning.
+                        if (STR_USER_PQS_READER.equals(strUserPqs))
+                            serviceNew.usePqsReader(strUserPqs);
                         String strTokenPqs = JwtMintProcess.strMintBlocking(authNow,
                                 options.version(), strUserPqs,
                                 StorageOverlay.STR_NODE_PARTICIPANT, TIMEOUT_MINT);
@@ -4038,6 +4114,11 @@ public final class SandboxWindow extends JFrame {
                                     + " nothing to present to an authenticated Ledger API");
                         }
                         serviceNew.usePqsToken(strTokenPqs);
+                        // SCRIBE'S CLIENT, registered at the window's own
+                        // provider when it checks clients - raposza/tools#4.
+                        // Unregistered, its client credentials were answered
+                        // 401 and PQS died at start.
+                        String strSecretPqs = strSecretPqsRegistered(strUserPqs);
                         // AND THE ENDPOINT, which is what scribe actually runs
                         // on. The token above stays as the liveness proof that
                         // the mint answered and signed with the key this
@@ -4045,7 +4126,7 @@ public final class SandboxWindow extends JFrame {
                         // starts rather than three minutes into a stream.
                         serviceNew.usePqsOAuth(JwtMintProcess.oauthPqs(authNow,
                                 options.version(), strUserPqs,
-                                StorageOverlay.STR_NODE_PARTICIPANT));
+                                StorageOverlay.STR_NODE_PARTICIPANT, strSecretPqs));
                     }
                     else if (!JwtMintProcess.isJwksServing(
                             authNow.strUrlJwksEffective(JwtMintProcess.strUrlJwks()),
@@ -4512,6 +4593,12 @@ public final class SandboxWindow extends JFrame {
 
 
     private void closeRequested() {
+        // A SNAPSHOT IS BEING COPIED - A-83. Closing would end the JVM under
+        // the copy and leave half a snapshot behind.
+        if (flagSnapshotBusy) {
+            warn("A snapshot is being saved. Close the window when it is done.");
+            return;
+        }
         // A START OR A STOP IN FLIGHT. isRunning() is true only for RUNNING,
         // so both took the branch below: the hook was removed, the window
         // disposed, and the JVM exited under the stop thread. His report,
@@ -4653,20 +4740,61 @@ public final class SandboxWindow extends JFrame {
             milestone("No founding snapshot taken: there is no cluster to copy");
             return;
         }
-        stopThen(() -> {
+        stopThen(() -> copyOffEdt("Taking the founding snapshot",
+                () -> foundingHere.save(dirCluster, props), exFailed -> {
+                    if (exFailed == null)
+                        milestone("Founding snapshot taken");
+                    else {
+                        // NOT FATAL AND NOT RETRIED. The start that follows
+                        // founds again, which is exactly the behaviour of
+                        // every start before this existed, so a failed copy
+                        // costs time and nothing else.
+                        milestone("Founding snapshot failed: " + exFailed.getMessage());
+                    }
+                    refreshFoundingState();
+                    startRequested();
+                }));
+    }
+
+
+    /**
+     * A snapshot copy OFF THE EVENT THREAD - `todo.md` A-83. `stopThen` hands
+     * its follow-up to the event thread, and `Snapshots.save` waits up to 60 s
+     * for PostgreSQL to let go of the cluster and then copies it whole, so the
+     * window froze for as long as that took.
+     *
+     * Called on the event thread. {@link #flagSnapshotBusy} holds Start, Save
+     * and the snapshot list from here until {@code onDone} has run, which is
+     * back on the event thread with the copy's failure or null.
+     *
+     * @param strPending the milestone shown while it copies
+     * @param runCopy the copy; touches no Swing
+     * @param onDone what the window does afterwards
+     */
+    private void copyOffEdt(String strPending, Runnable runCopy,
+            Consumer<RuntimeException> onDone) {
+        this.flagSnapshotBusy = true;
+        applyControls(stateNow);
+        milestone(strPending);
+        Thread threadCopy = new Thread(() -> {
+            RuntimeException exCopy = null;
             try {
-                foundingHere.save(dirCluster, props);
-                milestone("Founding snapshot taken");
+                runCopy.run();
             }
             catch (RuntimeException ex) {
-                // NOT FATAL AND NOT RETRIED. The start that follows founds
-                // again, which is exactly the behaviour of every start before
-                // this existed, so a failed copy costs time and nothing else.
-                milestone("Founding snapshot failed: " + ex.getMessage());
+                exCopy = ex;
             }
-            refreshFoundingState();
-            startRequested();
-        });
+            RuntimeException exDone = exCopy;
+            SwingUtilities.invokeLater(() -> {
+                this.flagSnapshotBusy = false;
+                applyControls(stateNow);
+                onDone.accept(exDone);
+            });
+        }, "sandbox-gui-snapshot");
+        // NOT A DAEMON. A JVM that exits under the copy leaves half a cluster
+        // in the snapshot store.
+        threadCopy.setDaemon(false);
+        threadCopy.start();
     }
 
 
@@ -4924,19 +5052,23 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
-        try {
-            snapshotsHere.save(strName, dirCluster, props);
-            // WHAT SPARES THE FIXTURE AT CLOSE. The cluster just written
-            // holds its contracts, and their packages are in the DAR.
-            this.flagSnapshotSaved = true;
-            milestone("Saved snapshot " + strName);
-            refreshSnapshots();
-            lstSnapshot.setSelectedValue(strName, true);
-        }
-        catch (RuntimeException ex) {
-            milestone("Snapshot failed: " + ex.getMessage());
-            warn(ex.getMessage());
-        }
+        // OFF THE EVENT THREAD - A-83. The name reaches the list only once
+        // the copy has finished, which is what both harnesses wait for.
+        copyOffEdt("Saving snapshot " + strName,
+                () -> snapshotsHere.save(strName, dirCluster, props), exFailed -> {
+                    if (exFailed != null) {
+                        milestone("Snapshot failed: " + exFailed.getMessage());
+                        warn(exFailed.getMessage());
+                        return;
+                    }
+                    // WHAT SPARES THE FIXTURE AT CLOSE. The cluster just
+                    // written holds its contracts, and their packages are in
+                    // the DAR.
+                    this.flagSnapshotSaved = true;
+                    milestone("Saved snapshot " + strName);
+                    refreshSnapshots();
+                    lstSnapshot.setSelectedValue(strName, true);
+                });
     }
 
 
@@ -5135,14 +5267,16 @@ public final class SandboxWindow extends JFrame {
         // AND NOT WHILE THE FIXTURE IS BEING BUILT. The table answers for the
         // STACK; the fixture is a second thing in flight that the stack knows
         // nothing about, and STOPPED is exactly the state it runs in.
-        btnStart.setEnabled(controls.flagStart() && !flagAviationBusy && !flagPharmaBusy);
+        btnStart.setEnabled(controls.flagStart() && !flagAviationBusy && !flagPharmaBusy
+                && !flagSnapshotBusy);
         btnStop.setEnabled(controls.flagStop());
         btnReset.setEnabled(controls.flagReset());
         // AND NEITHER IS Save snapshot - operator instruction. The fixture
         // is still being built or its scripts are still running, so a
         // snapshot taken now holds half of it.
-        btnSave.setEnabled(controls.flagSave() && !flagAviationBusy && !flagPharmaBusy);
-        lstSnapshot.setEnabled(controls.flagSnapshots());
+        btnSave.setEnabled(controls.flagSave() && !flagAviationBusy && !flagPharmaBusy
+                && !flagSnapshotBusy);
+        lstSnapshot.setEnabled(controls.flagSnapshots() && !flagSnapshotBusy);
         form.setInputEnabled(controls.flagInput());
         // AND NOT WHILE DPM INSTALLS - his finding, 2026-10-13. The rule above
         // would give the button back on every state change during it.

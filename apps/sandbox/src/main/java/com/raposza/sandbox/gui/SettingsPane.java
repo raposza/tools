@@ -97,6 +97,8 @@ public final class SettingsPane extends JPanel {
             RaposzaSettings.STR_KEY_DIR_DAML, RaposzaSettings.STR_KEY_DIR_DPM,
             RaposzaSettings.STR_KEY_DIR_SPLICE);
 
+    private static final String STR_LABEL_PQS = "PQS scribe.jar";
+
     private static final String STR_WHY_LOCKED = "Locked while the stack is running."
             + " Stop it to change this.";
 
@@ -451,6 +453,8 @@ public final class SettingsPane extends JPanel {
             mapField.get(RaposzaSettings.STR_KEY_DIR_DPM).setText(strOfDir(settings.dirDpm()));
             mapField.get(RaposzaSettings.STR_KEY_DIR_SPLICE)
                     .setText(strOfDir(settings.dirSplice()));
+            mapField.get(RaposzaSettings.STR_KEY_FILE_PQS)
+                    .setText(strOfDir(settings.filePqs()));
         }
         finally {
             flagLoading = false;
@@ -486,7 +490,8 @@ public final class SettingsPane extends JPanel {
                 dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DAML, "DAML Assistant directory"),
                 dirOptionalOf(RaposzaSettings.STR_KEY_DIR_DPM, "DPM directory"),
                 dirOptionalOf(RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory"),
-                nOf(RaposzaSettings.STR_KEY_PORT_RAWAR, "RAWAR port"));
+                nOf(RaposzaSettings.STR_KEY_PORT_RAWAR, "RAWAR port"),
+                fileFullOf(RaposzaSettings.STR_KEY_FILE_PQS, STR_LABEL_PQS));
     }
 
 
@@ -627,7 +632,8 @@ public final class SettingsPane extends JPanel {
 
 
     /**
-     * THREE INSTALLATIONS THIS APPLICATION DOES NOT OWN - todo.md A-45. Each
+     * FOUR INSTALLATIONS THIS APPLICATION DOES NOT OWN - todo.md A-45 and, for
+     * the PQS jar, raposza/tools#4. Each
      * points at one that already exists, a developer's own or a corporate
      * install directory; blank is the default. The installers do not follow
      * them.
@@ -638,7 +644,10 @@ public final class SettingsPane extends JPanel {
         int nRow = 0;
         nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_DAML, "DAML Assistant directory");
         nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_DPM, "DPM directory");
-        addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory");
+        nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory");
+        // A FILE, NOT A DIRECTORY, and by its full path: a scribe jar's name
+        // is not a contract - raposza/tools#4.
+        addFileRow(pnl, nRow, RaposzaSettings.STR_KEY_FILE_PQS, STR_LABEL_PQS);
         return pnl;
     }
 
@@ -670,6 +679,21 @@ public final class SettingsPane extends JPanel {
         mapBrowse.put(strKey, btnBrowse);
         btnBrowse.addActionListener(evt -> browse(fld, strLabel));
         // THE SETTINGS KEY IS THE HELP KEY. See FieldHelp.
+        JLabel lblRow = new JLabel(strLabel);
+        FieldHelp.install(lblRow, strKey);
+        pnl.add(lblRow, gbc(0, nRow, 0.0, GridBagConstraints.NONE));
+        pnl.add(fld, gbc(1, nRow, 1.0, GridBagConstraints.HORIZONTAL));
+        pnl.add(btnBrowse, gbc(2, nRow, 0.0, GridBagConstraints.NONE));
+        return nRow + 1;
+    }
+
+
+    private int addFileRow(JPanel pnl, int nRow, String strKey, String strLabel) {
+        JTextField fld = new JTextField(N_COLS_PATH);
+        mapField.put(strKey, fld);
+        JButton btnBrowse = new JButton("...");
+        mapBrowse.put(strKey, btnBrowse);
+        btnBrowse.addActionListener(evt -> browseFile(fld, strLabel));
         JLabel lblRow = new JLabel(strLabel);
         FieldHelp.install(lblRow, strKey);
         pnl.add(lblRow, gbc(0, nRow, 0.0, GridBagConstraints.NONE));
@@ -724,6 +748,49 @@ public final class SettingsPane extends JPanel {
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
             fld.setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize()
                     .toString());
+    }
+
+
+    private void browseFile(JTextField fld, String strTitle) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileHidingEnabled(false);
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        chooser.setDialogTitle(strTitle);
+        String strNow = fld.getText().trim();
+        if (!strNow.isEmpty()) {
+            try {
+                chooser.setSelectedFile(Path.of(strNow).toFile());
+            }
+            catch (RuntimeException ex) {
+                chooser.setCurrentDirectory(null);
+            }
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
+            fld.setText(chooser.getSelectedFile().toPath().toAbsolutePath().normalize()
+                    .toString());
+    }
+
+
+    /**
+     * @param strKey the field's key
+     * @param strLabel its label, for the refusal
+     * @return the file, or null when the field is blank
+     * @throws IllegalArgumentException when it is not a full path
+     */
+    private Path fileFullOf(String strKey, String strLabel) {
+        String strVal = mapField.get(strKey).getText().trim();
+        if (strVal.isEmpty())
+            return null;
+        Path file;
+        try {
+            file = Path.of(strVal);
+        }
+        catch (RuntimeException ex) {
+            throw new IllegalArgumentException(strLabel + " is not a path: " + strVal);
+        }
+        if (!file.isAbsolute())
+            throw new IllegalArgumentException(strLabel + " must be a full path: " + strVal);
+        return file.normalize();
     }
 
 

@@ -18,7 +18,7 @@
     <parent>
         <groupId>com.raposza</groupId>
         <artifactId>raposza-platform</artifactId>
-        <version>0.6.1</version>
+        <version>0.6.2</version>
     </parent>
 
     <artifactId>raposza-rawar</artifactId>

@@ -695,8 +695,25 @@ public final class JwtMintProcess {
      */
     public static PqsOAuth oauthPqs(AuthSettings auth, VersionId version, String strUser,
             String nameParticipant) {
-        return new PqsOAuth(strUrlToken(auth, version, strUser, nameParticipant), strUser, null,
-                auth.shape() == TokenShape.SCOPE ? auth.strScopeEffective() : null);
+        return oauthPqs(auth, version, strUser, nameParticipant, null);
+    }
+
+
+    /**
+     * The same, with the secret the window registered scribe's client under -
+     * `MintRegistration.strRegisterScribe`, raposza/tools#4.
+     *
+     * @param auth what the participant checks
+     * @param version the Canton being started
+     * @param strUser the ledger user PQS speaks as, and its client id
+     * @param nameParticipant the participant node name
+     * @param strSecret the client secret, or null for the placeholder
+     * @return what scribe is handed, ready to render
+     */
+    public static PqsOAuth oauthPqs(AuthSettings auth, VersionId version, String strUser,
+            String nameParticipant, String strSecret) {
+        return new PqsOAuth(strUrlToken(auth, version, strUser, nameParticipant), strUser,
+                strSecret, auth.shape() == TokenShape.SCOPE ? auth.strScopeEffective() : null);
     }
 
 

@@ -5,9 +5,9 @@ package com.raposza.canton.pqs;
 import com.raposza.canton.install.CantonInstallation;
 import com.raposza.canton.install.PqsInstallation;
 import com.raposza.canton.install.PqsInstallations;
+import com.raposza.canton.install.PqsResolution;
 
 import java.time.Duration;
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -64,11 +64,15 @@ import java.util.regex.Pattern;
  *        its own lifetime
  * @param nHeapMb the JVM heap for scribe, or 0 for the JVM default
  * @param timeoutReady how long the stack waits for PQS to report ingesting
+ * @param strWhyMock why the mock runs, when a resolution looked for scribe
+ *        and found none - raposza/tools#4; null for a real spec and for a
+ *        mock nobody looked for a binary for
  *
  * Author Claude/bentzn
  */
 public record PqsSpec(PqsInstallation installation, String strCantonLine, String strPrefix,
-        String strSchema, String strToken, PqsOAuth oauth, int nHeapMb, Duration timeoutReady) {
+        String strSchema, String strToken, PqsOAuth oauth, int nHeapMb, Duration timeoutReady,
+        String strWhyMock) {
 
     public static final String STR_DEFAULT_PREFIX = "pqs";
 
@@ -96,6 +100,8 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
             strCantonLine = installation.strCantonLine();
         else if (strCantonLine != null && strCantonLine.isBlank())
             strCantonLine = null;
+        if (installation != null || (strWhyMock != null && strWhyMock.isBlank()))
+            strWhyMock = null;
         if (strPrefix == null || strPrefix.isBlank())
             strPrefix = STR_DEFAULT_PREFIX;
         if (!PAT_PREFIX.matcher(strPrefix).matches())
@@ -121,7 +127,7 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
      * @return a spec that provisions the schema in-process and starts nothing
      */
     public static PqsSpec ofMock() {
-        return new PqsSpec(null, null, null, null, null, null, 0, null);
+        return new PqsSpec(null, null, null, null, null, null, 0, null, null);
     }
 
 
@@ -132,7 +138,7 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
      *         and renders the command the way that line's scribe takes it
      */
     public static PqsSpec ofMock(String strCantonLine) {
-        return new PqsSpec(null, strCantonLine, null, null, null, null, 0, null);
+        return new PqsSpec(null, strCantonLine, null, null, null, null, 0, null, null);
     }
 
 
@@ -143,7 +149,7 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
     public static PqsSpec of(PqsInstallation installation) {
         if (installation == null)
             throw new IllegalArgumentException("an installation is required; use ofMock()");
-        return new PqsSpec(installation, null, null, null, null, null, 0, null);
+        return new PqsSpec(installation, null, null, null, null, null, 0, null, null);
     }
 
 
@@ -171,27 +177,46 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
      *         and either way one that knows which generation it faces
      */
     public static PqsSpec resolveForLine(String strCantonLine) {
-        Optional<PqsInstallation> optPqs =
-                PqsInstallations.ofDefaults().forCantonLine(strCantonLine);
-        return optPqs.isPresent() ? of(optPqs.get()) : ofMock(strCantonLine);
+        PqsResolution resolution = PqsInstallations.ofDefaults().resolve(strCantonLine);
+        if (resolution.isFound())
+            return of(resolution.installation());
+        return new PqsSpec(null, strCantonLine, null, null, null, null, 0, null,
+                resolution.strWhyNone());
+    }
+
+
+    /**
+     * WHAT THE PERSON IS TOLD when PQS was asked for and only the mock could
+     * run - his instruction, 2026-10-26: that the Sandbox is not able to start
+     * PQS, and that it is the mock that runs. A milestone, not the PQS tab: a
+     * person who switched PQS on and is not looking at that tab has to learn
+     * it from the main log.
+     *
+     * @return the sentence, or null when scribe runs or nothing was looked for
+     */
+    public String strNotice() {
+        if (isReal() || strWhyMock == null)
+            return null;
+        return "The Sandbox is not able to start PQS: " + strWhyMock
+                + ". The PQS mock is running instead.";
     }
 
 
     public PqsSpec withPrefix(String strPrefixNew) {
         return new PqsSpec(installation, strCantonLine, strPrefixNew, strSchema, strToken, oauth,
-                nHeapMb, timeoutReady);
+                nHeapMb, timeoutReady, strWhyMock);
     }
 
 
     public PqsSpec withSchema(String strSchemaNew) {
         return new PqsSpec(installation, strCantonLine, strPrefix, strSchemaNew, strToken, oauth,
-                nHeapMb, timeoutReady);
+                nHeapMb, timeoutReady, strWhyMock);
     }
 
 
     public PqsSpec withToken(String strTokenNew) {
         return new PqsSpec(installation, strCantonLine, strPrefix, strSchema, strTokenNew, oauth,
-                nHeapMb, timeoutReady);
+                nHeapMb, timeoutReady, strWhyMock);
     }
 
 
@@ -206,19 +231,19 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
      */
     public PqsSpec withOAuth(PqsOAuth oauthNew) {
         return new PqsSpec(installation, strCantonLine, strPrefix, strSchema, strToken, oauthNew,
-                nHeapMb, timeoutReady);
+                nHeapMb, timeoutReady, strWhyMock);
     }
 
 
     public PqsSpec withHeapMb(int nHeapMbNew) {
         return new PqsSpec(installation, strCantonLine, strPrefix, strSchema, strToken, oauth,
-                nHeapMbNew, timeoutReady);
+                nHeapMbNew, timeoutReady, strWhyMock);
     }
 
 
     public PqsSpec withTimeout(Duration timeoutReadyNew) {
         return new PqsSpec(installation, strCantonLine, strPrefix, strSchema, strToken, oauth,
-                nHeapMb, timeoutReadyNew);
+                nHeapMb, timeoutReadyNew, strWhyMock);
     }
 
 
@@ -237,7 +262,7 @@ public record PqsSpec(PqsInstallation installation, String strCantonLine, String
                     + " line and is not overridable: " + installation);
         }
         return new PqsSpec(null, strCantonLineNew, strPrefix, strSchema, strToken, oauth, nHeapMb,
-                timeoutReady);
+                timeoutReady, strWhyMock);
     }
 
 

@@ -83,6 +83,7 @@ public final class Canton3xBootstrap {
     private final String strPartyHint;
     private final String strUserId;
     private final boolean flagPing;
+    private final String strUserPqs;
 
 
     public Canton3xBootstrap() {
@@ -110,7 +111,21 @@ public final class Canton3xBootstrap {
             throw new IllegalArgumentException("a party hint is required");
         if (strUserIdNew == null || strUserIdNew.isBlank())
             throw new IllegalArgumentException("a user id is required");
-        return new Canton3xBootstrap(strParticipant, strPartyHintNew, strUserIdNew, flagPing);
+        return new Canton3xBootstrap(strParticipant, strPartyHintNew, strUserIdNew, flagPing,
+                strUserPqs);
+    }
+
+
+    /**
+     * The user scribe reads as, fetched or created with `readAsAnyParty` -
+     * {@link PqsReaderScript}, raposza/tools#4.
+     *
+     * @param strUserPqsNew the user id scribe's token names
+     * @return a bootstrap that also makes sure that user is there
+     */
+    public Canton3xBootstrap withPqsReader(String strUserPqsNew) {
+        return new Canton3xBootstrap(strParticipant, strPartyHint, strUserId, flagPing,
+                PqsReaderScript.strRequired(strUserPqsNew));
     }
 
 
@@ -140,7 +155,7 @@ public final class Canton3xBootstrap {
      * @return a bootstrap that also pings
      */
     public Canton3xBootstrap withPing() {
-        return new Canton3xBootstrap(strParticipant, strPartyHint, strUserId, true);
+        return new Canton3xBootstrap(strParticipant, strPartyHint, strUserId, true, strUserPqs);
     }
 
 
@@ -150,18 +165,28 @@ public final class Canton3xBootstrap {
      *        an unknown identifier rather than one that quietly does nothing
      */
     public Canton3xBootstrap(String strParticipant) {
-        this(strParticipant, null, null, false);
+        this(strParticipant, null, null, false, null);
     }
 
 
     private Canton3xBootstrap(String strParticipant, String strPartyHint, String strUserId,
-            boolean flagPing) {
+            boolean flagPing, String strUserPqs) {
         if (strParticipant == null || strParticipant.isBlank())
             throw new IllegalArgumentException("a participant name is required");
         this.strParticipant = strParticipant;
         this.strPartyHint = strPartyHint;
         this.strUserId = strUserId;
         this.flagPing = flagPing;
+        this.strUserPqs = strUserPqs;
+    }
+
+
+    /**
+     * @return the user scribe reads as that this script makes sure of, or
+     *         null for none
+     */
+    public String strUserPqs() {
+        return strUserPqs;
     }
 
 
@@ -223,6 +248,9 @@ public final class Canton3xBootstrap {
 
         if (flagProvisions())
             appendProvisioning(sb, dirWork);
+
+        if (strUserPqs != null)
+            PqsReaderScript.append(sb, strParticipant, strUserPqs);
 
         if (flagPing)
             appendPing(sb, dirWork);

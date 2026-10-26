@@ -20,7 +20,7 @@
 
     <groupId>com.raposza</groupId>
     <artifactId>raposza-aggregator</artifactId>
-    <version>0.6.1</version>
+    <version>0.6.2</version>
     <packaging>pom</packaging>
     <name>raposza</name>
 

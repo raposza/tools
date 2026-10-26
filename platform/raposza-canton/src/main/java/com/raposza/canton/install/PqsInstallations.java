@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.canton.install;
 
+import com.raposza.runtime.settings.RaposzaSettings;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,7 +17,11 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -36,10 +42,27 @@ import java.util.stream.Stream;
  * repointing a line - as happened when 3.4.1's interface-view defect moved the
  * 3.4 line to 3.4.3 - is a filesystem change rather than a code change.
  *
- * The DPM cache is a secondary source and is WALKED, never composed. Canton
- * sits at components/&lt;name&gt;/&lt;version&gt;/ but scribe inserts a generation
+ * The DPM cache is WALKED, never composed. Canton sits at
+ * components/&lt;name&gt;/&lt;version&gt;/ but scribe inserts a generation
  * segment - components/scribe/daml3.4/3.4.1/ - so a path template built for
- * one misses the other entirely.
+ * one misses the other entirely. And the jar's NAME is not a contract either:
+ * DPM delivered `scribe/3.5.8/scribe.jar` and `scribe/3.6.2/pqs.jar` to one
+ * Windows guest, 2026-10-24.
+ *
+ * <h2>{@link #resolve} - what a stack runs, in order</h2>
+ *
+ * <ol>
+ * <li>the staged line alias under the PQS root, exactly as before;</li>
+ * <li>the DPM cache - the DPM root {@link ToolchainRoots} finds, the same one
+ *     Canton is found in, so `%APPDATA%\dpm` on Windows - newest version of the
+ *     line first;</li>
+ * <li>the jar `file.pqs` names in the settings, by its full path, whatever it
+ *     is called. Its own banner says which line it belongs to, and a jar for
+ *     another line is a MISMATCH, reported and not run.</li>
+ * </ol>
+ *
+ * Nothing found is an answer with a reason, {@link PqsResolution}, so the
+ * caller can tell the person why the mock runs instead.
  *
  * Absence is a normal answer here. A caller that finds none should skip rather
  * than fail.
@@ -64,6 +87,18 @@ public final class PqsInstallations {
 
     private static final int N_CACHE_SEARCH_DEPTH = 6;
 
+    private static final String STR_EXT_JAR = ".jar";
+
+    /** How long `java -jar &lt;jar&gt; --version` may take before it is given up on. */
+    private static final long N_SECONDS_BANNER = 30L;
+
+    /**
+     * One banner per jar per JVM, keyed on path, size and modification time,
+     * so a start does not pay a JVM launch for a jar it has already read and a
+     * replaced jar is read again.
+     */
+    private static final Map<String, Optional<String>> MAP_BANNER = new ConcurrentHashMap<>();
+
     private static final Pattern PAT_SOURCE_MOCK =
             Pattern.compile("(?mi)^\\s*source\\s*:\\s*mock");
 
@@ -75,6 +110,8 @@ public final class PqsInstallations {
 
     private final Path dirPqsRoot;
     private final Path dirDpmRoot;
+    private final Path filePqsSet;
+    private final Function<Path, String> fnBanner;
 
 
     /**
@@ -82,16 +119,241 @@ public final class PqsInstallations {
      * @param dirDpmRoot the DPM root, normally ~/.dpm
      */
     public PqsInstallations(Path dirPqsRoot, Path dirDpmRoot) {
-        if (dirPqsRoot == null || dirDpmRoot == null)
-            throw new IllegalArgumentException("both roots are required");
-        this.dirPqsRoot = dirPqsRoot;
-        this.dirDpmRoot = dirDpmRoot;
+        this(dirPqsRoot, dirDpmRoot, null, PqsInstallations::strBannerOf);
     }
 
 
+    /**
+     * @param dirPqsRoot the staging root, normally ~/.pqs
+     * @param dirDpmRoot the DPM root
+     * @param filePqsSet the jar the settings name, or null for none
+     * @param fnBanner what a jar prints for `--version`, or null when it
+     *        printed nothing usable; an argument so the order can be asserted
+     *        without a scribe on the machine
+     */
+    public PqsInstallations(Path dirPqsRoot, Path dirDpmRoot, Path filePqsSet,
+            Function<Path, String> fnBanner) {
+        if (dirPqsRoot == null || dirDpmRoot == null)
+            throw new IllegalArgumentException("both roots are required");
+        if (fnBanner == null)
+            throw new IllegalArgumentException("a banner reader is required");
+        this.dirPqsRoot = dirPqsRoot;
+        this.dirDpmRoot = dirDpmRoot;
+        this.filePqsSet = filePqsSet;
+        this.fnBanner = fnBanner;
+    }
+
+
+    /**
+     * THE DPM ROOT IS {@link ToolchainRoots}'s, not `~/.dpm`. That literal
+     * found nothing on Windows, where DPM keeps its cache under
+     * `%APPDATA%\dpm`, so every PQS start there ran the mock - raposza/tools#4.
+     *
+     * @return the installations this machine and its settings describe
+     */
     public static PqsInstallations ofDefaults() {
         Path dirHome = Path.of(System.getProperty("user.home"));
-        return new PqsInstallations(dirHome.resolve(".pqs"), dirHome.resolve(".dpm"));
+        return new PqsInstallations(dirHome.resolve(".pqs"),
+                ToolchainRoots.ofDefaults().dirDpm(), RaposzaSettings.current().filePqs(),
+                PqsInstallations::strBannerOf);
+    }
+
+
+    /**
+     * What a stack starting this Canton line runs - the type comment has the
+     * order.
+     *
+     * @param strCantonLine a Canton minor line such as "3.5"
+     * @return the scribe to run, or why there is none
+     */
+    public PqsResolution resolve(String strCantonLine) {
+        if (strCantonLine == null || strCantonLine.isBlank())
+            return PqsResolution.none("no Canton line was given to resolve PQS for");
+
+        String strLine = strCantonLine.trim();
+        Optional<PqsInstallation> optStaged = forCantonLine(strLine);
+        if (optStaged.isPresent())
+            return PqsResolution.of(optStaged.get());
+
+        Optional<PqsInstallation> optDpm = fromDpmCache(strLine);
+        if (optDpm.isPresent())
+            return PqsResolution.of(optDpm.get());
+
+        String strNoDpm = "there is no scribe for Canton " + strLine + " in " + dirDpmScribe();
+        if (filePqsSet == null)
+            return PqsResolution.none(strNoDpm + ", and no PQS scribe.jar is set in Settings");
+        return fromSetting(strLine, strNoDpm);
+    }
+
+
+    /**
+     * The newest DPM-cached scribe of the line. The version is the directory
+     * the jar sits in - DPM's component version - and the banner, when the jar
+     * prints one, is the check on it: a jar whose banner names another line is
+     * passed over.
+     */
+    private Optional<PqsInstallation> fromDpmCache(String strLine) {
+        List<PqsInstallation> lstFound = new ArrayList<>();
+        for (Path fileJar : discoverDpmCacheJars()) {
+            Optional<VersionId> optVersion = versionOfDir(fileJar);
+            if (optVersion.isEmpty() || !optVersion.get().isLine(strLine))
+                continue;
+            lstFound.add(new PqsInstallation(optVersion.get(), strLine, fileJar, null, null,
+                    PqsSource.DPM));
+        }
+        Collections.sort(lstFound);
+
+        for (PqsInstallation inst : lstFound) {
+            ScribeBanner banner = bannerOf(inst.fileJar());
+            if (banner == null)
+                return Optional.of(inst);
+            if (!banner.version().isLine(strLine)) {
+                log.warn("{} sits under version {} and reports scribe {}; passed over",
+                        inst.fileJar(), inst.version(), banner.version());
+                continue;
+            }
+            return Optional.of(new PqsInstallation(banner.version(), strLine, inst.fileJar(),
+                    banner.strSchemaRevision(), banner.strDamlSdkVersion(), PqsSource.DPM));
+        }
+        return Optional.empty();
+    }
+
+
+    /**
+     * The jar the settings name, accepted only for the line it belongs to.
+     *
+     * Its line comes from its own banner. A 3.x scribe's major.minor IS the
+     * Canton line; a 2.x scribe is versioned 0.x - v0.5.5 pairs with Canton
+     * 2.10 - so all its banner can say is that it belongs to the 2.x
+     * generation, and that is what it is checked against.
+     */
+    private PqsResolution fromSetting(String strLine, String strNoDpm) {
+        String strSet = "the PQS scribe.jar set in Settings, " + filePqsSet;
+        if (!Files.isRegularFile(filePqsSet))
+            return PqsResolution.none(strNoDpm + ", and " + strSet + ", is not a file");
+
+        ScribeBanner banner = bannerOf(filePqsSet);
+        if (banner == null) {
+            return PqsResolution.none(strNoDpm + ", and " + strSet
+                    + ", did not report a scribe version for java -jar --version");
+        }
+
+        VersionId version = banner.version();
+        boolean flagJar2x = version.major() == 0;
+        boolean flagMatch = flagJar2x ? PqsInstallation.isCanton2xLine(strLine)
+                : version.isLine(strLine);
+        if (!flagMatch) {
+            String strJarLine = flagJar2x ? "2.x" : banner.cantonLine();
+            return PqsResolution.none("PQS mismatched: " + strSet + ", is scribe " + version
+                    + ", for Canton " + strJarLine + ", and this stack runs Canton " + strLine);
+        }
+        return PqsResolution.of(new PqsInstallation(version, strLine, filePqsSet,
+                banner.strSchemaRevision(), banner.strDamlSdkVersion(), PqsSource.MANUAL));
+    }
+
+
+    private Path dirDpmScribe() {
+        return dirDpmRoot.resolve("cache").resolve("components").resolve("scribe");
+    }
+
+
+    private static Optional<VersionId> versionOfDir(Path fileJar) {
+        Path dirParent = fileJar.getParent();
+        if (dirParent == null || dirParent.getFileName() == null)
+            return Optional.empty();
+        return VersionId.tryParse(dirParent.getFileName().toString());
+    }
+
+
+    /**
+     * @return the banner the jar printed, parsed, or null when it printed none
+     *         that parses
+     */
+    private ScribeBanner bannerOf(Path fileJar) {
+        String strText = fnBanner.apply(fileJar);
+        if (strText == null)
+            return null;
+        try {
+            return ScribeBanner.parse(strText);
+        }
+        catch (InstallException ex) {
+            log.warn("{} printed no scribe banner: {}", fileJar, ex.getMessage());
+            return null;
+        }
+    }
+
+
+    /**
+     * `java -jar &lt;jar&gt; --version`, with the `java` on PATH - the same one
+     * {@link com.raposza.canton.pqs.ScribeProcess} starts scribe with - and
+     * standard error folded in.
+     *
+     * @param fileJar the jar to ask
+     * @return what it printed, or null when it could not be run or did not
+     *         finish in time
+     */
+    static String strBannerOf(Path fileJar) {
+        String strKey;
+        try {
+            strKey = fileJar.toAbsolutePath() + "|" + Files.size(fileJar) + "|"
+                    + Files.getLastModifiedTime(fileJar).toMillis();
+        }
+        catch (IOException ex) {
+            log.warn("could not read {}: {}", fileJar, ex.toString());
+            return null;
+        }
+        return MAP_BANNER.computeIfAbsent(strKey, strIgnored -> runVersion(fileJar)).orElse(null);
+    }
+
+
+    /**
+     * THE OUTPUT GOES TO A FILE, not a pipe. Reading a pipe to its end blocks
+     * for as long as the process lives, so a jar that never exits would hold
+     * the start with it and the timeout would never be reached.
+     */
+    private static Optional<String> runVersion(Path fileJar) {
+        Path fileOut = null;
+        Process proc = null;
+        try {
+            fileOut = Files.createTempFile("raposza-scribe-version-", ".txt");
+            ProcessBuilder pb = new ProcessBuilder("java", "-jar", fileJar.toString(),
+                    "--version");
+            pb.redirectErrorStream(true);
+            pb.redirectOutput(fileOut.toFile());
+            proc = pb.start();
+            // Nothing to say to it, and an open stdin is one more way to wait.
+            proc.getOutputStream().close();
+            if (!proc.waitFor(N_SECONDS_BANNER, TimeUnit.SECONDS)) {
+                log.warn("{} --version did not finish in {} s", fileJar, N_SECONDS_BANNER);
+                return Optional.empty();
+            }
+            return Optional.of(Files.readString(fileOut, StandardCharsets.UTF_8));
+        }
+        catch (IOException | UncheckedIOException ex) {
+            log.warn("could not run java -jar {} --version: {}", fileJar, ex.toString());
+            return Optional.empty();
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return Optional.empty();
+        }
+        finally {
+            if (proc != null && proc.isAlive())
+                proc.destroyForcibly();
+            deleteQuietly(fileOut);
+        }
+    }
+
+
+    private static void deleteQuietly(Path file) {
+        if (file == null)
+            return;
+        try {
+            Files.deleteIfExists(file);
+        }
+        catch (IOException ex) {
+            log.debug("could not delete {}: {}", file, ex.toString());
+        }
     }
 
 
@@ -157,16 +419,16 @@ public final class PqsInstallations {
 
 
     /**
-     * Every scribe.jar in the DPM cache, found by walking it.
-     *
-     * Provided for staging and reporting, not for launching: harness code
-     * launches what is staged under the PQS root.
+     * Every jar in the DPM scribe cache that sits in a version directory,
+     * found by walking it. The name is not checked - `scribe.jar` and
+     * `pqs.jar` both occur - the directory is: a jar anywhere else is not a
+     * component DPM installed.
      *
      * @return the jars found, in no guaranteed order
      */
     public List<Path> discoverDpmCacheJars() {
         List<Path> lstJar = new ArrayList<>();
-        Path dirScribe = dirDpmRoot.resolve("cache").resolve("components").resolve("scribe");
+        Path dirScribe = dirDpmScribe();
         if (!Files.isDirectory(dirScribe))
             return lstJar;
 
@@ -176,8 +438,8 @@ public final class PqsInstallations {
                 Path file = itPath.next();
                 if (!Files.isRegularFile(file))
                     continue;
-                String strName = file.getFileName().toString();
-                if (strName.startsWith("scribe") && strName.endsWith(".jar"))
+                String strName = file.getFileName().toString().toLowerCase(Locale.ROOT);
+                if (strName.endsWith(STR_EXT_JAR) && versionOfDir(file).isPresent())
                     lstJar.add(file);
             }
         }

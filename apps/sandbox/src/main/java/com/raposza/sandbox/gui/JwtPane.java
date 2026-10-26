@@ -523,7 +523,7 @@ public final class JwtPane extends JPanel {
                 settingsNow.flagOfferAviation(), settingsNow.flagOfferPharma(), strWanted,
                 settingsNow.nPortUiFirst(),
                 settingsNow.dirDaml(), settingsNow.dirDpm(), settingsNow.dirSplice(),
-                settingsNow.nPortRawar());
+                settingsNow.nPortRawar(), settingsNow.filePqs());
         try {
             RaposzaSettings.store(settingsNew);
         }

@@ -36,11 +36,11 @@ and no backports; a fix arrives as a new version.
 
 ## When this was last reviewed
 
-**Reviewed 2026-10-14 for 0.6.1**, against the tree as it stands -
+**Reviewed 2026-10-26 for 0.6.2**, against the tree as it stands -
 `docs/security-review.md` carries the result, with Raposza OIDC at 0.5.1. The
 first review was 2026-09-25, the second 2026-09-26 for 0.4.0, the third
 2026-09-27 for 0.4.1, the fourth 2026-10-05 for 0.5.0, the fifth 2026-10-06
-for 0.5.0, the sixth 2026-10-14 for 0.6.0.
+for 0.5.0, the sixth 2026-10-14 for 0.6.0, the seventh 2026-10-14 for 0.6.1.
 
 ## The short statement of the model
 

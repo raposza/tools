@@ -147,6 +147,12 @@ public final class SandboxService implements StackService_i {
     private transient PqsOAuth oauthPqs;
 
     /**
+     * The user the 3.x bootstrap fetches or creates with `readAsAnyParty`,
+     * for scribe to read as - raposza/tools#4. Null for none.
+     */
+    private transient String strUserPqsReader;
+
+    /**
      * Where the pinned admin token is written for other processes to read.
      *
      * A FILE, because that is what `daml script --access-token-file` takes and
@@ -304,6 +310,18 @@ public final class SandboxService implements StackService_i {
      */
     public void usePqsToken(String strTokenNew) {
         this.strTokenPqs = strTokenNew;
+    }
+
+
+    /**
+     * Makes sure the participant has the user scribe reads as - fetched, or
+     * created with `readAsAnyParty` - before the stack reports ready. 3.x
+     * only; the 2.x arm runs no such bootstrap.
+     *
+     * @param strUserNew the user id scribe's token names, or null for none
+     */
+    public void usePqsReader(String strUserNew) {
+        this.strUserPqsReader = strUserNew;
     }
 
 
@@ -602,9 +620,9 @@ public final class SandboxService implements StackService_i {
         // under either: the subcommand renders them as `--dar` and the daemon
         // bootstrap picks them off the same spec.
         if (options.isDaemon())
-            stackNew.useBootstrap(bootstrapDaemonFor(options));
+            stackNew.useBootstrap(bootstrapDaemonFor(options, strUserPqsReader));
         else
-            stackNew.useBootstrap(bootstrapFor(options));
+            stackNew.useBootstrap(bootstrapFor(options, strUserPqsReader));
 
         PqsSpec specPqs = pqsFor(options, installationNew);
         // THE MINTED TOKEN WHEN THERE IS ONE, on this line as well as 2.x.
@@ -621,6 +639,7 @@ public final class SandboxService implements StackService_i {
         if (specPqs != null) {
             stackNew.usePqs(specPqs);
             outLine.accept("pqs: " + specPqs.describe());
+            notePqs(specPqs);
             // NO NOTE HERE. What used to print - that PQS had never been run
             // under the daemon launcher and was neither refused nor measured -
             // is a fact about this project's own test coverage, and a person
@@ -737,6 +756,7 @@ public final class SandboxService implements StackService_i {
         if (specPqs != null) {
             stackNew.usePqs(specPqs);
             outLine.accept("pqs: " + specPqs.describe());
+            notePqs(specPqs);
         }
 
         stackNew.useOutputSink(sinkComponent);
@@ -912,6 +932,17 @@ public final class SandboxService implements StackService_i {
      * @return the console script for the subcommand launcher
      */
     static Canton3xBootstrap bootstrapFor(SandboxOptions optionsHere) {
+        return bootstrapFor(optionsHere, null);
+    }
+
+
+    /**
+     * @param optionsHere what was asked for
+     * @param strUserPqs the user scribe reads as, made sure of when PQS is on,
+     *        or null for none
+     * @return the console script for the subcommand launcher
+     */
+    static Canton3xBootstrap bootstrapFor(SandboxOptions optionsHere, String strUserPqs) {
         // Always a script, even with nothing asked for: it writes the marker
         // and the participant id, and the id is the one fact about a running
         // sandbox that cannot be derived from the arguments.
@@ -921,6 +952,8 @@ public final class SandboxService implements StackService_i {
                     optionsHere.strUserId());
         if (optionsHere.flagPing())
             bootstrapNew = bootstrapNew.withPing();
+        if (strUserPqs != null && optionsHere.pqs() != SandboxOptions.PqsMode.OFF)
+            bootstrapNew = bootstrapNew.withPqsReader(strUserPqs);
         return bootstrapNew;
     }
 
@@ -937,13 +970,42 @@ public final class SandboxService implements StackService_i {
      * @return the in-JVM script for the daemon launcher
      */
     static Canton3xDaemonBootstrap bootstrapDaemonFor(SandboxOptions optionsHere) {
+        return bootstrapDaemonFor(optionsHere, null);
+    }
+
+
+    /**
+     * @param optionsHere what was asked for
+     * @param strUserPqs the user scribe reads as, made sure of when PQS is on,
+     *        or null for none
+     * @return the in-JVM script for the daemon launcher
+     */
+    static Canton3xDaemonBootstrap bootstrapDaemonFor(SandboxOptions optionsHere,
+            String strUserPqs) {
         Canton3xDaemonBootstrap bootstrapNew = new Canton3xDaemonBootstrap();
         if (optionsHere.flagProvisions())
             bootstrapNew = bootstrapNew.withPartyAndUser(optionsHere.strPartyHint(),
                     optionsHere.strUserId());
         if (optionsHere.flagPing())
             bootstrapNew = bootstrapNew.withPing();
+        if (strUserPqs != null && optionsHere.pqs() != SandboxOptions.PqsMode.OFF)
+            bootstrapNew = bootstrapNew.withPqsReader(strUserPqs);
         return bootstrapNew;
+    }
+
+
+    /**
+     * PQS WAS ASKED FOR AND ONLY THE MOCK CAN RUN: said as a milestone, his
+     * instruction of 2026-10-26 - raposza/tools#4. The verbose line above it
+     * says the same to a reader of the participant tab; this is for the
+     * person who switched PQS on and is watching the main log.
+     *
+     * @param specPqs what will run
+     */
+    private void notePqs(PqsSpec specPqs) {
+        String strNotice = specPqs.strNotice();
+        if (strNotice != null)
+            milestones.note(strNotice);
     }
 
 

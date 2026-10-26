@@ -1,6 +1,6 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-16T07:10:00Z -->
+<!-- Author Claude/bentzn  Generated 2026-10-12T07:03:15Z  Updated 2026-10-26T18:45:00Z -->
 # First installation — Linux and Windows
 
 From a clean machine to a running Sandbox and Workbench. You install Java and download Raposza; the Sandbox downloads and installs DPM, the Daml SDK and Splice itself. The versions below are the ones this release is built and tested with:
@@ -10,7 +10,7 @@ From a clean machine to a running Sandbox and Workbench. You install Java and do
 | Java | 21 or newer |
 | Daml SDK | 3.6.0 |
 | Splice | 0.8.3 and 0.9.1 |
-| Raposza | 0.6.1 |
+| Raposza | 0.6.2 |
 
 Linux commands run in a shell; Windows commands run in PowerShell. Nothing asks for administrator rights, on either platform.
 
@@ -34,7 +34,7 @@ java -version
 
 ## 2. Download Raposza
 
-Download 3 files: `sandbox-0.6.1-app.jar`, `workbench-0.6.1-app.jar` and `SHA256SUMS` from the [Raposza 0.6.1 release](https://github.com/raposza/tools/releases/tag/v0.6.1) into your Downloads folder.
+Download 3 files: `sandbox-0.6.2-app.jar`, `workbench-0.6.2-app.jar` and `SHA256SUMS` from the [Raposza 0.6.2 release](https://github.com/raposza/tools/releases/tag/v0.6.2) into your Downloads folder.
 
 On Windows, Edge warns about each jar: choose **Keep file**.
 
@@ -64,14 +64,14 @@ Linux:
 
 ```
 cd ~/Downloads
-java -jar sandbox-0.6.1-app.jar
+java -jar sandbox-0.6.2-app.jar
 ```
 
 Windows - PowerShell:
 
 ```
 cd $env:USERPROFILE\Downloads
-java -jar sandbox-0.6.1-app.jar
+java -jar sandbox-0.6.2-app.jar
 ```
 
 1. Choose **Single participant**.
@@ -95,14 +95,14 @@ Linux:
 
 ```
 cd ~/Downloads
-java -jar workbench-0.6.1-app.jar
+java -jar workbench-0.6.2-app.jar
 ```
 
 Windows - PowerShell:
 
 ```
 cd $env:USERPROFILE\Downloads
-java -jar workbench-0.6.1-app.jar
+java -jar workbench-0.6.2-app.jar
 ```
 
 1. Choose **a local Sandbox**, leave the default port and press **OK**. It takes a few seconds for the data to load.
@@ -135,14 +135,14 @@ Linux:
 
 ```
 cd ~/Downloads
-java -jar workbench-0.6.1-app.jar
+java -jar workbench-0.6.2-app.jar
 ```
 
 Windows - PowerShell:
 
 ```
 cd $env:USERPROFILE\Downloads
-java -jar workbench-0.6.1-app.jar
+java -jar workbench-0.6.2-app.jar
 ```
 
 Connect as in step 4. It opens one tab per participant, `app-provider`, `app-user` and `sv`, and each tab shows what that participant sees.

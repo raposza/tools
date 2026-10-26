@@ -64,6 +64,14 @@ import org.slf4j.LoggerFactory;
  * default is decided where it is used, `ToolchainRoots` and
  * `SpliceInstallations`, from the environment of the JVM that uses it.
  *
+ * <h2>One file this application does not own - PQS</h2>
+ *
+ * `file.pqs` is a scribe jar the developer already has, named by its FULL
+ * path, because its file name is not a contract. Blank means the DPM cache
+ * only. It is consulted when the DPM cache holds no scribe for the Canton
+ * line being started, and a jar named here that belongs to another line is
+ * reported as a mismatch rather than run - `PqsInstallations`.
+ *
  * <h2>Reading never throws, writing does</h2>
  *
  * The same rule the profile store follows. A settings file that cannot be read
@@ -118,11 +126,14 @@ import org.slf4j.LoggerFactory;
  * @param nPortRawar the port the RAWAR server binds - one port in the 31xxx
  *        web UI class, mounts and not ports separating the RAWARs on it;
  *        `rawar.md` section 5
+ * @param filePqs a scribe jar to use where the DPM cache has none, by its
+ *        full path, or null for none
  */
 public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, String strLine,
         String strLauncher, int nPortFirst, int nPortPostgres, int nSecondsReady,
         boolean flagOfferAviation, boolean flagOfferPharma, String strUrlOidc,
-        int nPortUiFirst, Path dirDaml, Path dirDpm, Path dirSplice, int nPortRawar) {
+        int nPortUiFirst, Path dirDaml, Path dirDpm, Path dirSplice, int nPortRawar,
+        Path filePqs) {
 
     /** Points the whole application at another settings file. Tests use it. */
     public static final String STR_PROP_FILE = "raposza.settings";
@@ -154,6 +165,9 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
 
     /** Where existing Splice bundles sit, `<dir>/<version>/splice-node`; blank for `~/.splice`. */
     public static final String STR_KEY_DIR_SPLICE = "dir.splice";
+
+    /** A scribe jar by its full path, used where the DPM cache has none; blank for none. */
+    public static final String STR_KEY_FILE_PQS = "file.pqs";
 
     /**
      * An EXTERNAL OpenID Provider's base url, or empty to start one.
@@ -331,7 +345,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         this(dirHome, nPortMint, nPortDiscovery, strLine, strLauncher, nPortFirst,
                 nPortPostgres, nSecondsReady, FLAG_OFFER_AVIATION_DEFAULT,
                 FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
-                null, null, null, N_PORT_RAWAR_DEFAULT);
+                null, null, null, N_PORT_RAWAR_DEFAULT, null);
     }
 
 
@@ -353,6 +367,12 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         dirDaml = dirOptional(dirDaml);
         dirDpm = dirOptional(dirDpm);
         dirSplice = dirOptional(dirSplice);
+        // A FULL PATH OR NOTHING. A relative one would be resolved against
+        // whichever directory the JVM happened to start in.
+        if (filePqs != null && !filePqs.isAbsolute())
+            throw new IllegalArgumentException(STR_KEY_FILE_PQS + " must be a full path: "
+                    + filePqs);
+        filePqs = dirOptional(filePqs);
         if (nSecondsReady < 1)
             throw new IllegalArgumentException(STR_KEY_SECONDS_READY + " must be at least 1: "
                     + nSecondsReady);
@@ -421,7 +441,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 N_PORT_FIRST_DEFAULT, N_PORT_POSTGRES_DEFAULT,
                 N_SECONDS_READY_DEFAULT, FLAG_OFFER_AVIATION_DEFAULT,
                 FLAG_OFFER_PHARMA_DEFAULT, STR_URL_OIDC_DEFAULT, N_PORT_UI_FIRST_DEFAULT,
-                null, null, null, N_PORT_RAWAR_DEFAULT);
+                null, null, null, N_PORT_RAWAR_DEFAULT, null);
     }
 
 
@@ -683,7 +703,8 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
                 dirOf(props, STR_KEY_DIR_DAML, settingsElse.dirDaml()),
                 dirOf(props, STR_KEY_DIR_DPM, settingsElse.dirDpm()),
                 dirOf(props, STR_KEY_DIR_SPLICE, settingsElse.dirSplice()),
-                nPortOf(props, STR_KEY_PORT_RAWAR, settingsElse.nPortRawar()));
+                nPortOf(props, STR_KEY_PORT_RAWAR, settingsElse.nPortRawar()),
+                fileFullOf(props, STR_KEY_FILE_PQS, settingsElse.filePqs()));
     }
 
 
@@ -707,6 +728,7 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         props.setProperty(STR_KEY_DIR_DAML, strOfDir(dirDaml));
         props.setProperty(STR_KEY_DIR_DPM, strOfDir(dirDpm));
         props.setProperty(STR_KEY_DIR_SPLICE, strOfDir(dirSplice));
+        props.setProperty(STR_KEY_FILE_PQS, strOfDir(filePqs));
         return props;
     }
 
@@ -796,6 +818,29 @@ public record RaposzaSettings(Path dirHome, int nPortMint, int nPortDiscovery, S
         catch (RuntimeException ex) {
             LOG.warn("{} is not a path, keeping {}: {}", strKey, dirElse, ex.getMessage());
             return dirElse;
+        }
+    }
+
+
+    /**
+     * A FULL PATH, or the fallback - the per-key rule. A relative path is a
+     * value with an intention behind it that cannot be honoured, and it is
+     * warned about rather than resolved against the working directory.
+     */
+    private static Path fileFullOf(Properties props, String strKey, Path fileElse) {
+        String strVal = props.getProperty(strKey);
+        if (strVal == null || strVal.isBlank())
+            return fileElse;
+        try {
+            Path file = Path.of(strVal.trim());
+            if (file.isAbsolute())
+                return file.normalize();
+            LOG.warn("{} is not a full path, keeping {}: {}", strKey, fileElse, strVal);
+            return fileElse;
+        }
+        catch (RuntimeException ex) {
+            LOG.warn("{} is not a path, keeping {}: {}", strKey, fileElse, ex.getMessage());
+            return fileElse;
         }
     }
 

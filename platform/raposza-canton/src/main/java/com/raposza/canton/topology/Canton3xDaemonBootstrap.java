@@ -224,6 +224,7 @@ public final class Canton3xDaemonBootstrap {
     private final String strUserId;
     private final boolean flagPing;
     private final List<Path> lstFileDar;
+    private final String strUserPqs;
 
 
     public Canton3xDaemonBootstrap() {
@@ -241,13 +242,13 @@ public final class Canton3xDaemonBootstrap {
     public Canton3xDaemonBootstrap(String strParticipant, String strSequencer, String strMediator,
             String strSynchronizer) {
         this(strParticipant, strSequencer, strMediator, strSynchronizer, null, null, false,
-                List.of());
+                List.of(), null);
     }
 
 
     private Canton3xDaemonBootstrap(String strParticipant, String strSequencer, String strMediator,
             String strSynchronizer, String strPartyHint, String strUserId, boolean flagPing,
-            List<Path> lstFileDarNew) {
+            List<Path> lstFileDarNew, String strUserPqs) {
         if (strParticipant == null || strParticipant.isBlank())
             throw new IllegalArgumentException("a participant name is required");
         if (strSequencer == null || strSequencer.isBlank())
@@ -265,6 +266,7 @@ public final class Canton3xDaemonBootstrap {
         this.strUserId = strUserId;
         this.flagPing = flagPing;
         this.lstFileDar = lstFileDarNew == null ? List.of() : List.copyOf(lstFileDarNew);
+        this.strUserPqs = strUserPqs;
     }
 
 
@@ -294,7 +296,30 @@ public final class Canton3xDaemonBootstrap {
             throw new IllegalArgumentException("a user id is required");
 
         return new Canton3xDaemonBootstrap(strParticipant, strSequencer, strMediator,
-                strSynchronizer, strPartyHintNew, strUserIdNew, flagPing, lstFileDar);
+                strSynchronizer, strPartyHintNew, strUserIdNew, flagPing, lstFileDar, strUserPqs);
+    }
+
+
+    /**
+     * The user scribe reads as, fetched or created with `readAsAnyParty` -
+     * {@link PqsReaderScript}, raposza/tools#4.
+     *
+     * @param strUserPqsNew the user id scribe's token names
+     * @return a bootstrap that also makes sure that user is there
+     */
+    public Canton3xDaemonBootstrap withPqsReader(String strUserPqsNew) {
+        return new Canton3xDaemonBootstrap(strParticipant, strSequencer, strMediator,
+                strSynchronizer, strPartyHint, strUserId, flagPing, lstFileDar,
+                PqsReaderScript.strRequired(strUserPqsNew));
+    }
+
+
+    /**
+     * @return the user scribe reads as that this script makes sure of, or
+     *         null for none
+     */
+    public String strUserPqs() {
+        return strUserPqs;
     }
 
 
@@ -303,7 +328,7 @@ public final class Canton3xDaemonBootstrap {
      */
     public Canton3xDaemonBootstrap withPing() {
         return new Canton3xDaemonBootstrap(strParticipant, strSequencer, strMediator,
-                strSynchronizer, strPartyHint, strUserId, true, lstFileDar);
+                strSynchronizer, strPartyHint, strUserId, true, lstFileDar, strUserPqs);
     }
 
 
@@ -327,7 +352,7 @@ public final class Canton3xDaemonBootstrap {
      */
     public Canton3xDaemonBootstrap withDars(List<Path> lstFileDarNew) {
         return new Canton3xDaemonBootstrap(strParticipant, strSequencer, strMediator,
-                strSynchronizer, strPartyHint, strUserId, flagPing, lstFileDarNew);
+                strSynchronizer, strPartyHint, strUserId, flagPing, lstFileDarNew, strUserPqs);
     }
 
 
@@ -444,6 +469,9 @@ public final class Canton3xDaemonBootstrap {
 
         if (flagProvisions())
             appendProvisioning(sb, dirWork);
+
+        if (strUserPqs != null)
+            PqsReaderScript.append(sb, strParticipant, strUserPqs);
 
         if (flagPing)
             appendPing(sb, dirWork);
