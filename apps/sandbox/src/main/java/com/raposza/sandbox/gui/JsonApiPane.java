@@ -55,7 +55,7 @@ public final class JsonApiPane extends JPanel {
 
     private final JButton btnCheck = new JButton("Check");
 
-    private final LogPane log = new LogPane();
+    private final LogPane log = new LogPane().useDebugLog("JSON API");
 
 
     /**

@@ -327,6 +327,56 @@ public final class ToolchainInstall {
 
 
     /**
+     * THE SAME INSTALL FROM AN ARCHIVE FETCHED BY HAND - his instruction,
+     * 2026-10-30: where downloads are blocked, the archive is fetched
+     * elsewhere and installed from file. It is the archive
+     * {@link DpmBootstrap#strArchive} names and {@link #versionInstallDpm}
+     * downloads; its own `dpm` bootstraps it, so DPM need not be on the
+     * machine first, and nothing is fetched.
+     *
+     * @param fileArchive the archive, `dpm-<version>-<target><ext>`
+     * @param dirWork a directory this may write into
+     * @return the SDK version its name carries, or null when it carries none
+     * @throws IOException when it is not a file, or the unpack or the
+     *         bootstrap fails
+     */
+    public VersionId versionInstallDpmFromFile(Path fileArchive, Path dirWork)
+            throws IOException {
+        if (fileArchive == null || dirWork == null)
+            throw new IllegalArgumentException("an archive and a work directory are required");
+        if (!Files.isRegularFile(fileArchive))
+            throw new IOException("not a file: " + fileArchive);
+
+        Files.createDirectories(dirWork);
+        // A DIRECTORY OF ITS OWN. Unpacked over an earlier archive, the
+        // earlier one's files would sit beside it and the bootstrap would
+        // read whichever manifest was written last.
+        Path dirUnpacked = Files.createTempDirectory(dirWork, STR_DIR_UNPACKED + "-");
+        say("unpacking " + fileArchive.getFileName());
+        nRunChecked(Extract.lstCommand(fileArchive, dirUnpacked), dirWork, null, "the unpack");
+        nRunChecked(DpmBootstrap.lstCommand(dirUnpacked, platform), dirUnpacked,
+                this::sayBootstrap, "the DPM bootstrap");
+        VersionId version = versionOfArchive(fileArchive.getFileName().toString());
+        say("DPM installed from " + fileArchive.getFileName());
+        return version;
+    }
+
+
+    /**
+     * @param strName an archive's file name
+     * @return the version after `dpm-`, or null when the name does not carry one
+     */
+    static VersionId versionOfArchive(String strName) {
+        if (strName == null || !strName.startsWith(DpmBootstrap.STR_PREFIX_ARCHIVE))
+            return null;
+        String strRest = strName.substring(DpmBootstrap.STR_PREFIX_ARCHIVE.length());
+        int idxDash = strRest.indexOf('-');
+        return VersionId.tryParse(idxDash < 0 ? strRest : strRest.substring(0, idxDash))
+                .orElse(null);
+    }
+
+
+    /**
      * @return what the latest-version endpoint answers, trimmed
      * @throws IOException when it answers nothing
      */
@@ -349,8 +399,8 @@ public final class ToolchainInstall {
         Path dirUnpacked = dirUnpack(dirWork, DpmBootstrap.strArchive(strVersion, platform),
                 DpmBootstrap.strUrl(strVersion, platform));
 
-        nRunChecked(DpmBootstrap.lstCommand(dirUnpacked, platform), dirUnpacked, null,
-                "the DPM bootstrap");
+        nRunChecked(DpmBootstrap.lstCommand(dirUnpacked, platform), dirUnpacked,
+                this::sayBootstrap, "the DPM bootstrap");
         say("DPM " + strVersion + " installed");
         return DpmBootstrap.fileLauncher(dirUnpacked, platform);
     }
@@ -656,6 +706,26 @@ public final class ToolchainInstall {
 
     /** How dpm starts the line for each component it fetches. */
     static final String STR_PULLING = "Pulling ";
+
+    /** How DPM's bootstrap asks for PATH: "Please add "...\dpm\bin" to your PATH". */
+    static final String STR_DPM_PATH_HINT = "Please add ";
+
+
+    /**
+     * The bootstrap's lines, less the one asking the user to put DPM on PATH -
+     * 2026-10-30, his instruction to fix it. Raposza finds DPM under its root
+     * without PATH, `ToolchainLauncher`, so the line asked for something
+     * nothing here needs. It stays in the application log.
+     *
+     * @param strLine one line of the bootstrap's output
+     */
+    private void sayBootstrap(String strLine) {
+        if (strLine != null && strLine.startsWith(STR_DPM_PATH_HINT)) {
+            log.info(strLine);
+            return;
+        }
+        say(strLine);
+    }
 
 
     /**

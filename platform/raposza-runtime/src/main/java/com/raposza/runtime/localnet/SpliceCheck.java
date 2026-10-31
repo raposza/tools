@@ -11,6 +11,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -64,6 +66,15 @@ public final class SpliceCheck {
     /** What a bundle that passed carries in its version directory. */
     public static final String STR_FILE_CHECKED = "CHECKED.txt";
 
+    /**
+     * Version directories that passed in this JVM, held whether or not
+     * {@link #STR_FILE_CHECKED} could be written. Without it a directory that
+     * refused the write was checked again on every start, and the window,
+     * which re-enters its start once the check has passed, looped on it -
+     * Splice 0.8.0, his run of 2026-10-30.
+     */
+    private static final Set<Path> SET_PASSED = ConcurrentHashMap.newKeySet();
+
     /** The vendor's own line, verbatim from the 0.8.2 run. */
     static final String STR_LOG_FAILURE = "Unable to load log configuration";
 
@@ -96,18 +107,31 @@ public final class SpliceCheck {
 
 
     /**
+     * @param dirBundle a `splice-node` directory
+     * @return whether it has passed before, so {@link #strWhyNotStarts}
+     *         answers at once - what a caller on the event thread asks first
+     */
+    public static boolean isChecked(Path dirBundle) {
+        Path dirVersion = dirBundle.toAbsolutePath().normalize().getParent();
+        return dirVersion != null && (SET_PASSED.contains(dirVersion)
+                || Files.isRegularFile(dirVersion.resolve(STR_FILE_CHECKED)));
+    }
+
+
+    /**
      * Runs the check, or answers from {@link #STR_FILE_CHECKED}.
      *
      * @param dirBundle a `splice-node` directory
      * @return null when the bundle starts, else why not
      */
     public static String strWhyNotStarts(Path dirBundle) {
-        Path dirVersion = dirBundle.toAbsolutePath().normalize().getParent();
-        if (dirVersion != null && Files.isRegularFile(dirVersion.resolve(STR_FILE_CHECKED)))
+        if (isChecked(dirBundle))
             return null;
+        Path dirVersion = dirBundle.toAbsolutePath().normalize().getParent();
 
         String strWhy = strWhyNotRun(dirBundle);
         if (strWhy == null && dirVersion != null) {
+            SET_PASSED.add(dirVersion);
             try {
                 Files.writeString(dirVersion.resolve(STR_FILE_CHECKED),
                         "splice-node started and wrote its log - "
@@ -115,7 +139,9 @@ public final class SpliceCheck {
                         StandardCharsets.UTF_8);
             }
             catch (IOException ex) {
-                // A directory that cannot be written is checked again next time.
+                // SAID, not swallowed: the next window checks this version again.
+                System.err.println("Splice check passed, but " + dirVersion.resolve(STR_FILE_CHECKED)
+                        + " could not be written: " + ex);
             }
         }
         return strWhy;

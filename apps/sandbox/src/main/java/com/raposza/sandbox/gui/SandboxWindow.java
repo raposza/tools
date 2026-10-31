@@ -3,6 +3,7 @@
 package com.raposza.sandbox.gui;
 
 import com.raposza.canton.install.CantonInstallation;
+import com.raposza.canton.install.DpmBootstrap;
 import com.raposza.canton.install.DpmBundles;
 import com.raposza.canton.install.HostPlatform;
 import com.raposza.canton.install.SdkInstallations;
@@ -32,6 +33,7 @@ import com.raposza.runtime.localnet.LocalNetSpec;
 import com.raposza.runtime.db.PostgresCoordinates;
 import com.raposza.runtime.localnet.LocalNetRunner;
 import com.raposza.runtime.localnet.LocalNetUi;
+import com.raposza.runtime.localnet.SpliceCheck;
 import com.raposza.runtime.localnet.SpliceInstallations;
 import com.raposza.sandbox.StackComponent;
 import com.raposza.sandbox.app.JwtMintProcess;
@@ -69,11 +71,13 @@ import java.awt.event.ComponentEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.net.ConnectException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.ArrayList;
@@ -90,6 +94,8 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.DefaultListModel;
+import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.JList;
 import javax.swing.ListSelectionModel;
 import javax.swing.JFrame;
@@ -268,6 +274,15 @@ public final class SandboxWindow extends JFrame {
 
     /** A DPM install is running - {@link #installDpmRequested}. */
     private volatile boolean flagDpmInstalling;
+
+    /** A Splice bundle's own start check is running - {@link #checkSpliceThenStart}. */
+    private boolean flagSpliceChecking;
+
+    /** A Canton for a Splice release is being installed - {@link #offerCanton}. */
+    private volatile boolean flagCantonInstalling;
+
+    /** The machine is being read - {@link #machineCheck}. */
+    private boolean flagMachineChecking;
 
     /** Hidden unless this machine has nothing to start - LocalNetND only. */
     private final ToolchainBanner banner = new ToolchainBanner();
@@ -958,6 +973,8 @@ public final class SandboxWindow extends JFrame {
         setStateChip(SandboxService.State.STOPPED);
         logMain.useClock(true);
         logLedger.useClock(true);
+        logMain.useDebugLog("Main");
+        logLedger.useDebugLog("Ledger");
         // EVERY REQUEST TO A RAWAR, on the Web tab - his instruction,
         // 2026-10-04. Set once; the server keeps it across its rebinds.
         rawar.useAccess(access -> paneWeb.access(WebAccess.strRawar(access)));
@@ -1000,7 +1017,17 @@ public final class SandboxWindow extends JFrame {
         // on two participants and the other topology has one. Asking both
         // would be two dialogs at open, of which one can never be answered
         // usefully.
-        SwingUtilities.invokeLater(isLocalNet() ? this::offerPharma : this::openSingle);
+        //
+        // AND ON A FIRST START, WHAT THIS MACHINE HAS COMES BEFORE EITHER - R1,
+        // his handover of 2026-10-30. The offer follows the check.
+        Runnable runOffer = isLocalNet() ? this::offerPharma : this::openSingle;
+        SwingUtilities.invokeLater(() -> {
+            if (FirstStart.isFirst())
+                machineCheck(true, runOffer);
+            else
+                runOffer.run();
+        });
+        paneSettings.useMachineCheckAction(() -> machineCheck(false, null));
 
         pnlChipState.setOpaque(false);
         JPanel pnlFooter = new JPanel(new BorderLayout(GuiTheme.scale(GuiTheme.N_GAP), 0));
@@ -1060,7 +1087,7 @@ public final class SandboxWindow extends JFrame {
             // LocalNetND has no store of its own, and a chooser opening in the
             // home directory started as far from a built DAR as it could.
             entry.getValue().useDarDirectory(() -> RaposzaSettings.current().dirSandbox());
-            entry.getValue().useDarStore(SandboxWindow::dirDarsLocal);
+            entry.getValue().useDarStore(this::dirDarsLocal);
         }
         form.useSdkInstallAction(this::installSdkRequested);
         form.useInstallSink(this::installChanged);
@@ -1311,7 +1338,7 @@ public final class SandboxWindow extends JFrame {
         String strToken = strTokenUsers;
         if (strToken != null) {
             try {
-                return SandboxUsers.lstRead(read.strUrlJson(), strToken);
+                return SandboxUsers.lstRead(read.strUrlJson(), strToken, read.version());
             }
             catch (IOException ex) {
                 // EXPIRED, or another stack since: minted again below.
@@ -1323,7 +1350,8 @@ public final class SandboxWindow extends JFrame {
         if (strToken == null)
             throw new IOException("the provider minted no token for " + JwtPane.STR_USER_ADMIN
                     + " within " + DUR_USERS_MINT);
-        List<String> lstOut = SandboxUsers.lstRead(read.strUrlJson(), strToken.trim());
+        List<String> lstOut = SandboxUsers.lstRead(read.strUrlJson(), strToken.trim(),
+                read.version());
         strTokenUsers = strToken.trim();
         return lstOut;
     }
@@ -2086,7 +2114,7 @@ public final class SandboxWindow extends JFrame {
      *
      * @return the store, or null when no installed Canton carries a runtime
      */
-    private static Path dirDarsLocal() {
+    private Path dirDarsLocal() {
         CantonInstallation instStock = instCantonStock();
         if (instStock == null)
             return null;
@@ -2192,8 +2220,11 @@ public final class SandboxWindow extends JFrame {
         // `WrappedPlainView.breakLines`. `LogPane` says why; Wrap still turns
         // it back on, pane by pane.
         for (int idxTab = 0; idxTab < inner.getTabCount(); idxTab++) {
-            if (inner.getComponentAt(idxTab) instanceof LogPane paneLog)
+            if (inner.getComponentAt(idxTab) instanceof LogPane paneLog) {
                 paneLog.useWrap(false);
+                // INTO THE DEBUG LOG UNDER THE TAB'S NAME - 2026-10-30.
+                paneLog.useDebugLog(inner.getTitleAt(idxTab));
+            }
         }
 
         JPanel pnlTab = new JPanel(new BorderLayout());
@@ -2262,14 +2293,14 @@ public final class SandboxWindow extends JFrame {
         // PostGres tab, so Zonky's initdb narration and the server's own log
         // sat in the middle of Canton's. A line belongs to one component.
         if (strLine.contains(STR_LOGGER_PG) || strLine.contains(STR_LOGGER_ZONKY)) {
-            logPostgres.append(strLine);
+            logPostgres.append(strLine, false);
             return;
         }
         if (strLine.contains(STR_LOGGER_PQS)) {
-            logPqs.append(strLine);
+            logPqs.append(strLine, false);
             return;
         }
-        logParticipant.append(strLine);
+        logParticipant.append(strLine, false);
     }
 
 
@@ -2492,7 +2523,7 @@ public final class SandboxWindow extends JFrame {
             }
             catch (IOException | RuntimeException ex) {
                 SwingUtilities.invokeLater(() -> installDpmDone(null,
-                        String.valueOf(ex.getMessage())));
+                        Failures.strWhy(ex)));
             }
         }, "raposza-dpm-install");
         threadInstall.setDaemon(true);
@@ -2513,6 +2544,10 @@ public final class SandboxWindow extends JFrame {
         if (strError != null) {
             logMain.append("Install FAILED: " + strError);
             footerNotice("Install failed");
+            // NOT BACK WHERE HE STARTED - his finding on the WinVM, 2026-10-30:
+            // a failed download ended in OK and the main window, with nothing
+            // to do next where downloads are blocked.
+            offerDpmFromFile(strError);
             return;
         }
 
@@ -2761,6 +2796,11 @@ public final class SandboxWindow extends JFrame {
         applyControls(stateNow);
         milestone(AviationSession.STR_PHASE);
         footerSettles(STR_FOOTER_AVIATION);
+        // THE LAMP SAYS IT IS UNDER WAY, as Pharma's does - his finding on the
+        // WinVM, 2026-10-30: the founding pass's stop turned it off, and it went
+        // from grey straight to green.
+        lamps.setFixtureShown(true);
+        lamps.setFixtureHealth(SandboxService.Health.STARTING);
         aviation.run(form.auth(), instNow.version(), nPortLedger, this::aviationDone);
     }
 
@@ -3044,7 +3084,10 @@ public final class SandboxWindow extends JFrame {
         Path dirRoot = SpliceInstallations.dirRoot();
         SpliceInstallDialog dialog = new SpliceInstallDialog(this,
                 new HashSet<>(SpliceInstallations.lstVersion()),
-                SpliceAcquire::lstVersionPublished, SpliceAcquire::nBytesPublished,
+                // 0.8 AND LATER ONLY - his finding on the WinVM, 2026-10-30: the
+                // older rows installed and were then refused, SpliceCanton.
+                () -> SpliceCanton.lstFromFloor(SpliceAcquire.lstVersionPublished()),
+                SpliceAcquire::nBytesPublished,
                 (strVersion, lineProgress) -> SpliceAcquire.download(strVersion, dirRoot,
                         lineBoth(lineProgress), strLine -> {
                             // ONE LINE, REWRITTEN IN PLACE - his instruction.
@@ -3062,6 +3105,29 @@ public final class SandboxWindow extends JFrame {
 
         form.useSplice(SpliceInstallations.lstVersion());
         footerNotice("Installed Splice " + strVersion);
+        // THE CANTON IT NEEDS, SAID AT INSTALL rather than at the first start -
+        // his instruction, 2026-10-30. Rescanned, because an SDK installed by
+        // hand while the window was open is a Canton the cache has not seen,
+        // and OFF THE EVENT THREAD, because the rescan walks the toolchain
+        // roots - his instruction the same day: "I do not want the UI to EVER
+        // freeze."
+        Thread threadCanton = new Thread(() -> {
+            SpliceCanton.Choice choice = SpliceCanton.choose(strVersion,
+                    SpliceInstallations.versionsOf(strVersion), SandboxService.rescanCanton());
+            SwingUtilities.invokeLater(() -> {
+                if (!isDisplayable())
+                    return;
+                if (choice.inst() == null) {
+                    offerCanton(strVersion, choice, false, "Splice " + strVersion
+                            + " is installed, but LocalNetND cannot start it.\n\n");
+                    return;
+                }
+                // NOT IN MAIN - his instruction, 2026-10-30.
+                System.out.println(choice.strNote());
+            });
+        }, "sandbox-splice-canton");
+        threadCanton.setDaemon(true);
+        threadCanton.start();
     }
 
 
@@ -3588,6 +3654,25 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
+        // WHICH CANTON, AND WHETHER LocalNetND RUNS THIS RELEASE AT ALL, BEFORE
+        // ANYTHING ELSE - his instructions, 2026-10-30: the line the release
+        // names, never the newest of any line, and Splice 0.8 the lowest.
+        SpliceCanton.Choice choice = choiceCanton();
+        if (choice.inst() == null) {
+            offerCanton(strVersion, choice, true, "");
+            return;
+        }
+        // THE BUNDLE'S OWN START CHECK OFF THE EVENT THREAD - his instruction,
+        // 2026-10-30: "I do not want the UI to EVER freeze." It runs the
+        // bundle's executable, takes up to a minute the first time a version is
+        // started and is remembered after; `LocalNetRunner.of` below asks again
+        // and is answered at once. It froze the window for 43 s on 0.5.10.
+        Path dirBundle = SpliceInstallations.dirBundle(strVersion);
+        if (!SpliceCheck.isChecked(dirBundle)) {
+            checkSpliceThenStart(strVersion, dirBundle);
+            return;
+        }
+
         logPostgres.clear();
         logParticipant.clear();
         logSplice.clear();
@@ -3604,12 +3689,10 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
-        CantonInstallation instStock = instCantonStock();
-        if (instStock == null) {
-            Modals.warn(this, "no installed Canton carries a runtime jar, and the"
-                    + " three participants run inside one");
-            return;
-        }
+        CantonInstallation instStock = choice.inst();
+        // NOT IN MAIN - his instruction, 2026-10-30. The console and the
+        // debug log carry it; Main's `Canton SDK` line names the version.
+        System.out.println(choice.strNote());
 
         // WHAT THE OPERATOR SELECTED, not a constant. Until 2026-09-21 this
         // path built `ofJwks` off the local mint whatever the six rows held,
@@ -3620,13 +3703,14 @@ public final class SandboxWindow extends JFrame {
             authStack = localNetAuthOf(authNow, instStock.version());
         }
         catch (RuntimeException ex) {
-            Modals.warn(this, String.valueOf(ex.getMessage()));
+            Modals.warn(this, Failures.strWhy(ex));
             return;
         }
 
-        // BEFORE THE STACK, for the same reason the Sandbox path restarts it
-        // there: the participants read the key set while they start.
-        paneJwt.restartService();
+        // THE MINT IS RESTARTED BEFORE THE STACK, for the same reason the
+        // Sandbox path restarts it there: the participants read the key set
+        // while they start. ON THE START THREAD since 2026-10-27 -
+        // `restartMintForStart`.
         // AND TOLD WHAT THEY WILL VERIFY, which is what lets the tab mint a
         // token the running stack accepts. Without this the tab holds no
         // settings at all on this topology, `strUrlTokenFor` answers null and
@@ -3650,7 +3734,7 @@ public final class SandboxWindow extends JFrame {
                     portsHere, authStack);
         }
         catch (RuntimeException ex) {
-            Modals.warn(this, String.valueOf(ex.getMessage()));
+            Modals.warn(this, Failures.strWhy(ex));
             return;
         }
 
@@ -3760,6 +3844,12 @@ public final class SandboxWindow extends JFrame {
         this.authLocalRunning = authStack;
         Thread threadStart = new Thread(() -> {
             try {
+                restartMintForStart();
+                // A STOP PRESSED DURING THE MINT'S RESTART reached a runner
+                // that had not started, and found nothing to stop. Given up
+                // here, the catch below stops it again and reports the cancel.
+                if (flagCancelStart)
+                    throw new IllegalStateException("the start was cancelled");
                 runnerNew.start();
                 registerAtProvider(runnerNew, authStackHere);
                 SwingUtilities.invokeLater(() -> localNetDone(runnerNew));
@@ -3781,7 +3871,7 @@ public final class SandboxWindow extends JFrame {
                 SwingUtilities.invokeLater(() -> {
                     this.runner = null;
                     removeHook();
-                    startFailed(String.valueOf(ex.getMessage()));
+                    startFailed(Failures.strWhy(ex));
                 });
             }
         }, "localnet-gui-start");
@@ -3889,6 +3979,37 @@ public final class SandboxWindow extends JFrame {
     }
 
 
+    /**
+     * Stops the mint and starts it again, ON THE START THREAD - his report,
+     * 2026-10-27, that Start answered seconds after the press. The stop waits
+     * for the provider's process to exit; the start writes to the OIDC tab, so
+     * it is handed to the event thread and this returns once it has run.
+     *
+     * BEFORE CANTON, and restarted rather than left alone. The participant
+     * reads the JWKS while it starts, so the service has to be answering by
+     * then; and a mint left over from the previous run may have been given
+     * different settings since.
+     *
+     * @throws IllegalStateException when the start thread is interrupted, or
+     *         the start on the event thread threw
+     */
+    private void restartMintForStart() {
+        paneJwt.stopServiceForStart();
+        try {
+            SwingUtilities.invokeAndWait(paneJwt::startService);
+        }
+        catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("the start was interrupted while the JWT service"
+                    + " restarted", ex);
+        }
+        catch (InvocationTargetException ex) {
+            throw new IllegalStateException("the JWT service did not restart: "
+                    + ex.getCause().getMessage(), ex);
+        }
+    }
+
+
     private void startRequested() {
         // A RESET OR A FOUNDING PASS WHOSE STOP OUTLIVED THE WINDOW - the user
         // closed it during the stop. A start now would bring up a stack with
@@ -3916,12 +4037,25 @@ public final class SandboxWindow extends JFrame {
         // DECLARED OUT HERE so the opening line can name it. It is read
         // inside the try because reading it can refuse the start.
         String strSnapshot = null;
+        // THE CLUSTER WORK IS DECIDED HERE AND DONE ON THE START THREAD - his
+        // report, 2026-10-27: Start stayed enabled and the log said nothing
+        // for seconds after the press. The wipe deleted the whole PostgreSQL
+        // cluster and the restore copied a snapshot's back, file by file, on
+        // the event thread, before the button was disabled or the opening
+        // line written.
+        // ASSIGNED ONCE, inside the try, because reading the field can refuse.
+        RunDirectory runHere;
+        Snapshots snapshotsHere = snapshots;
+        Founding foundingHere = null;
+        Founding.Action action = null;
         try {
-            // BEFORE the options are read, because the wipe is what makes the
-            // cluster path a first start every time and because toOptions()
-            // asks the DAR directory whether it has anything in it - a
-            // question that has to be put to a directory that exists.
-            form.run().prepare();
+            // BEFORE the options are read, because toOptions() asks the DAR
+            // directory whether it has anything in it - a question that has
+            // to be put to a directory that exists. The WIPE is no longer
+            // here; it is the first thing the start thread does to the
+            // cluster, and nothing between here and there reads it.
+            runHere = form.run();
+            runHere.prepareDirectories();
             // READ AT START, not when the row was clicked. The list says what
             // the next start runs on, so pressing Start twice runs the same
             // snapshot twice - which is the reset this was asked for.
@@ -3931,8 +4065,8 @@ public final class SandboxWindow extends JFrame {
             // moved since the version was selected.
             founding = foundingOfSandbox(form.selected());
             refreshFoundingState();
-            Founding foundingHere = founding;
-            Founding.Action action = Founding.actionOf(strSnapshot,
+            foundingHere = founding;
+            action = Founding.actionOf(strSnapshot,
                     foundingHere != null && foundingHere.exists());
             // THE PASS IS DECIDED HERE AND NOT AFTER THE START, because it
             // changes what the start is GIVEN. A founding snapshot holds
@@ -3948,19 +4082,14 @@ public final class SandboxWindow extends JFrame {
             if (flagFoundingPass)
                 this.strFoundingTried = foundingHere.strKey();
             if (action == Founding.Action.RESTORE_USER) {
-                // AFTER the wipe, over the top of it.
+                // REFUSED HERE, as a dialog, before anything starts. The copy
+                // itself is the start thread's - after the wipe, over the top
+                // of it.
                 String strWhy = whyRefused(strSnapshot);
                 if (strWhy != null) {
                     throw new IllegalArgumentException("that snapshot does not"
                             + " match this form:\n" + strWhy);
                 }
-                snapshots.restore(strSnapshot, form.run().dirData());
-            }
-            else if (action == Founding.Action.RESTORE_FOUNDING) {
-                // THE SAME PLACE AND THE SAME ORDER as a user snapshot: after
-                // the wipe, over the top of it. The only differences are that
-                // nothing chose it and nothing displays it.
-                foundingHere.restore(form.run().dirData());
             }
             this.strSnapshotRunning = strSnapshot;
             // NO DARs ON THE PASS. They are the whole of what would make the
@@ -4000,11 +4129,8 @@ public final class SandboxWindow extends JFrame {
             return;
         }
 
-        // BEFORE Canton, and restarted rather than left alone. The
-        // participant reads the JWKS while it starts, so the service has to
-        // be answering by then; and a mint left over from the previous run
-        // may have been given different settings since.
-        paneJwt.restartService();
+        // THE MINT IS RESTARTED ON THE START THREAD, before the cluster work
+        // and before Canton - `restartMintForStart`.
         // WHAT THE MINT WILL BE ASKED FOR, told before Canton comes up so the
         // tab can say what a token will look like while the start is running.
         AuthSettings authNow = form.auth();
@@ -4057,8 +4183,22 @@ public final class SandboxWindow extends JFrame {
         timerSettle.stop();
         status.setReport(null, null);
 
+        String strSnapshotStart = strSnapshot;
+        Founding foundingStart = foundingHere;
+        Founding.Action actionStart = action;
         Thread threadStart = new Thread(() -> {
             try {
+                // THE SLOW HALF OF THE PRESS, after the button is disabled and
+                // the opening line is written - his report, 2026-10-27. The
+                // mint first, so it is coming up while the cluster is laid
+                // down; then the wipe; then the snapshot over the top of it,
+                // the same order as before. All of it before Canton.
+                restartMintForStart();
+                runHere.wipeData();
+                if (actionStart == Founding.Action.RESTORE_USER)
+                    snapshotsHere.restore(strSnapshotStart, runHere.dirData());
+                else if (actionStart == Founding.Action.RESTORE_FOUNDING)
+                    foundingStart.restore(runHere.dirData());
                 // BEFORE the start and ON THIS THREAD, because it blocks on a
                 // Spring Boot process that was restarted moments ago and the
                 // event dispatch thread cannot wait for one.
@@ -4390,36 +4530,454 @@ public final class SandboxWindow extends JFrame {
 
 
     /**
-     * THE STOCK CANTON INSTALLATION, FOUND RATHER THAN DEMANDED.
-     *
-     * `CantonImage.fromEnvironment` looks in `~/.raposza/canton-image` and
-     * refuses when nothing is banked there, which is what stopped the first
-     * LocalNet start from this window on 2026-09-21. This application already
-     * discovers every Canton on the machine for its own version box, so the
-     * newest one carrying a runtime is handed to the runner as a pinned jar
-     * and the banked directory becomes a fallback rather than a requirement.
-     *
-     * NEWEST BY VERSION, the same comparison the form's box uses to pick its
-     * default - `CantonInstallation.compareTo` sorts newest first, so a
-     * version comparison is the one that reads as it means.
+     * THE CANTON THE THREE PARTICIPANTS RUN INSIDE, CHOSEN BY THE SPLICE
+     * RELEASE SELECTED - his rule, 2026-10-30; {@link SpliceCanton} says how.
+     * Until then this was the newest Canton on the machine of ANY line, which
+     * started Splice 0.9.4 on 2.9.6 on a machine with nothing newer.
      *
      * THE INSTALLATION AND NOT THE JAR, since 2026-09-21: the three
      * participants run inside this Canton, so its VERSION is what decides
      * whether their auth block may carry a `max-token-life` at all.
      *
-     * @return the installation, or null when no installed Canton has a
-     *         runtime; null leaves the runner on its own resolution and its
-     *         own message
+     * @return the installation, or null when none fits the selected release
      */
-    private static CantonInstallation instCantonStock() {
-        CantonInstallation instBest = null;
-        for (CantonInstallation inst : SandboxService.lstCanton()) {
-            if (!inst.hasRuntime())
-                continue;
-            if (instBest == null || inst.version().compareTo(instBest.version()) > 0)
-                instBest = inst;
+    private CantonInstallation instCantonStock() {
+        return choiceCanton().inst();
+    }
+
+
+    /**
+     * @return the Canton for the Splice release the form has selected, and why
+     */
+    private SpliceCanton.Choice choiceCanton() {
+        String strSplice = form.strVersionSelected();
+        return SpliceCanton.choose(strSplice,
+                strSplice == null ? null : SpliceInstallations.versionsOf(strSplice),
+                SandboxService.lstCanton());
+    }
+
+
+    /**
+     * The bundle's own start check on a thread of its own, then the start
+     * again on the event thread - which finds it done. Start stays down
+     * while it runs; a failure is said in Main and in a dialog and is asked
+     * again next time, as {@link SpliceCheck} keeps only a pass.
+     *
+     * @param strVersion the Splice version selected
+     * @param dirBundle its bundle
+     */
+    private void checkSpliceThenStart(String strVersion, Path dirBundle) {
+        flagSpliceChecking = true;
+        applyControls(stateNow);
+        logMain.appendSpinning("Checking that Splice " + strVersion + " starts");
+        Thread threadCheck = new Thread(() -> {
+            String strWhy;
+            try {
+                strWhy = SpliceCheck.strWhyNotStarts(dirBundle);
+            }
+            catch (RuntimeException ex) {
+                strWhy = Failures.strWhy(ex);
+            }
+            String strWhyFinal = strWhy;
+            SwingUtilities.invokeLater(() -> {
+                flagSpliceChecking = false;
+                if (!isDisplayable())
+                    return;
+                applyControls(stateNow);
+                if (strWhyFinal != null) {
+                    String strLine = "Splice " + strVersion + " cannot be started: " + strWhyFinal;
+                    logMain.append(strLine);
+                    Modals.warn(this, strLine);
+                    return;
+                }
+                logMain.append("Splice " + strVersion + " passed its start check");
+                startLocalNet();
+            });
+        }, "sandbox-splice-check");
+        threadCheck.setDaemon(true);
+        threadCheck.start();
+    }
+
+
+    /**
+     * NO CANTON OF THE RELEASE'S LINE, AND THE USER IS HELPED TO ONE - his
+     * instruction, 2026-10-30: "If none is installed, the user should be
+     * helped installing it (download or file)." A Daml SDK of that line
+     * brings the Canton. Download installs the newest one DPM publishes, DPM
+     * first where it is missing; from file takes the archive the DPM install
+     * downloads, fetched by hand, and bootstraps it. Any other refusal is
+     * said as it was.
+     *
+     * @param strSplice the Splice version
+     * @param choice the refusal
+     * @param flagStartAfter whether the start goes ahead once a Canton is in
+     * @param strLead what the dialog says first, or empty
+     */
+    private void offerCanton(String strSplice, SpliceCanton.Choice choice,
+            boolean flagStartAfter, String strLead) {
+        logMain.append(choice.strRefusal());
+        String strLine = choice.strLineNeeded();
+        if (strLine == null || flagCantonInstalling) {
+            Modals.warn(this, strLead + choice.strRefusal());
+            return;
         }
-        return instBest;
+
+        HostPlatform platform = HostPlatform.ofDefaults();
+        String strUrl = DpmBootstrap.STR_URL_ARCHIVE
+                + DpmBootstrap.strArchive(strLine + ".<patch>", platform);
+        String[] arrOption = { "Download", "Install from file...", "Cancel" };
+        int idx = Modals.idxOption(this, strLead + choice.strRefusal()
+                + "\n\nDownload installs the newest Daml SDK " + strLine + " through DPM,"
+                + " and DPM first if it is not installed."
+                + "\nWhere downloads are blocked, fetch the archive by hand and install it"
+                + " from file:\n" + strUrl, arrOption, arrOption[0]);
+        if (idx == 0) {
+            installCanton(strSplice, flagStartAfter, "Installing a Daml SDK " + strLine
+                    + " for Splice " + strSplice + ".", () -> downloadSdkOfLine(strSplice,
+                            strLine));
+            return;
+        }
+        if (idx != 1)
+            return;
+
+        Path fileArchive = fileArchiveChosen("Install a Daml SDK " + strLine + " from file",
+                DpmBootstrap.strArchive(strLine + ".<patch>", platform));
+        if (fileArchive == null)
+            return;
+        installCanton(strSplice, flagStartAfter, "Installing " + fileArchive.getFileName()
+                + " for Splice " + strSplice + ".",
+                () -> toolchain(null).versionInstallDpmFromFile(fileArchive, dirInstallWork()));
+    }
+
+
+    /** One install step that may fail. */
+    @FunctionalInterface
+    private interface CantonWork {
+
+        void run() throws IOException;
+    }
+
+
+    /**
+     * OFF THE EVENT THREAD, the install and the rescan after it; the verdict
+     * is read again from the disk and said on the event thread.
+     */
+    private void installCanton(String strSplice, boolean flagStartAfter, String strFirst,
+            CantonWork work) {
+        flagCantonInstalling = true;
+        applyControls(stateNow);
+        logMain.append(strFirst);
+        Thread threadInstall = new Thread(() -> {
+            String strError = null;
+            try {
+                work.run();
+            }
+            catch (IOException | RuntimeException ex) {
+                strError = Failures.strWhy(ex);
+            }
+            SpliceCanton.Choice choiceNow = SpliceCanton.choose(strSplice,
+                    SpliceInstallations.versionsOf(strSplice), SandboxService.rescanCanton());
+            String strErrorFinal = strError;
+            SwingUtilities.invokeLater(() -> cantonInstalled(strSplice, choiceNow,
+                    strErrorFinal, flagStartAfter));
+        }, "raposza-canton-install");
+        threadInstall.setDaemon(true);
+        threadInstall.start();
+    }
+
+
+    /**
+     * THE NEWEST DAML SDK OF THE LINE THAT DPM PUBLISHES, DPM first where it
+     * is missing. The DPM install brings an SDK of its own; when that one is
+     * already of the line, nothing more is installed.
+     *
+     * @param strSplice the Splice version, to ask again after DPM
+     * @param strLine the Canton line, `3.6`
+     */
+    private void downloadSdkOfLine(String strSplice, String strLine) throws IOException {
+        if (!ToolchainLauncher.flagFound(ToolchainRoots.STR_NAME_DPM)) {
+            toolchain(null).fileInstallDpm(dirInstallWork());
+            if (SpliceCanton.choose(strSplice, SpliceInstallations.versionsOf(strSplice),
+                    SandboxService.rescanCanton()).inst() != null)
+                return;
+        }
+        ToolchainInstall install = toolchain(null);
+        VersionId versionSdk = null;
+        for (SdkOffer offer : install.lstOfferDpm(dirInstallWork())) {
+            if (offer.version().isLine(strLine)
+                    && (versionSdk == null || offer.version().compareTo(versionSdk) > 0))
+                versionSdk = offer.version();
+        }
+        if (versionSdk == null)
+            throw new IOException("DPM publishes no Daml SDK of the " + strLine + " line");
+        install.installSdkDpm(versionSdk, dirInstallWork());
+    }
+
+
+    /**
+     * @param strSplice the Splice version
+     * @param choice the choice read again after the install
+     * @param strError why the install failed, or null
+     * @param flagStartAfter whether the start goes ahead now
+     */
+    private void cantonInstalled(String strSplice, SpliceCanton.Choice choice, String strError,
+            boolean flagStartAfter) {
+        flagCantonInstalling = false;
+        if (!isDisplayable())
+            return;
+        applyControls(stateNow);
+        if (strError != null) {
+            logMain.append("Install FAILED: " + strError);
+            // OFFERED AGAIN, from file as well - his finding on the WinVM,
+            // 2026-10-30: a failed download left him back at the main window.
+            if (choice.strLineNeeded() != null) {
+                offerCanton(strSplice, choice, flagStartAfter, "That failed: " + strError
+                        + "\n\n");
+                return;
+            }
+            Modals.warn(this, "The install failed: " + strError);
+            return;
+        }
+        if (choice.inst() == null) {
+            logMain.append(choice.strRefusal());
+            Modals.warn(this, "The install finished, but Splice " + strSplice
+                    + " still has no Canton.\n\n" + choice.strRefusal());
+            return;
+        }
+        // NOT IN MAIN - his instruction, 2026-10-30.
+        System.out.println(choice.strNote());
+        logMain.append("Canton " + choice.inst().version() + " installed for Splice "
+                + strSplice + ".");
+        if (flagStartAfter)
+            startLocalNet();
+    }
+
+
+    /**
+     * WHAT THIS MACHINE HAS, and what to do about what it lacks - R1, his
+     * handover of 2026-10-30. The disk is read OFF THE EVENT THREAD and the
+     * answer shown on it.
+     *
+     * @param flagFirst whether this is the first start, which the check ends
+     * @param runAfter what to run once the dialog is answered, or null
+     */
+    private void machineCheck(boolean flagFirst, Runnable runAfter) {
+        if (flagMachineChecking)
+            return;
+        this.flagMachineChecking = true;
+        paneSettings.setMachineCheckEnabled(false);
+        footerNotice("Checking this machine");
+        Thread threadScan = new Thread(() -> {
+            MachineCheck.Facts facts = null;
+            String strError = null;
+            try {
+                facts = MachineCheck.scan();
+            }
+            catch (RuntimeException ex) {
+                strError = Failures.strWhy(ex);
+            }
+            MachineCheck.Facts factsRead = facts;
+            String strErrorRead = strError;
+            SwingUtilities.invokeLater(() -> machineChecked(factsRead, strErrorRead, flagFirst,
+                    runAfter));
+        }, "sandbox-machine-check");
+        threadScan.setDaemon(true);
+        threadScan.start();
+    }
+
+
+    /**
+     * @param facts what was read, or null when reading failed
+     * @param strError why it failed, or null
+     * @param flagFirst whether this is the first start
+     * @param runAfter what to run once the dialog is answered, or null
+     */
+    private void machineChecked(MachineCheck.Facts facts, String strError, boolean flagFirst,
+            Runnable runAfter) {
+        this.flagMachineChecking = false;
+        paneSettings.setMachineCheckEnabled(true);
+        if (!isDisplayable())
+            return;
+        if (flagFirst) {
+            String strNotWritten = FirstStart.strDone();
+            if (strNotWritten != null)
+                logMain.append(strNotWritten);
+        }
+        if (facts == null) {
+            Modals.error(this, "This machine could not be read: " + strError);
+            if (runAfter != null)
+                runAfter.run();
+            return;
+        }
+
+        MachineCheck.Report report = MachineCheck.reportOf(facts, isLocalNet());
+        // INTO THE DEBUG LOG, NOT MAIN - his instruction of 2026-10-30.
+        System.out.println("machine check:\n" + report.strText());
+        List<MachineCheck.Action> lstAction = report.lstAction();
+        String[] arrOption = new String[lstAction.size()];
+        for (int idx = 0; idx < arrOption.length; idx++) {
+            arrOption[idx] = lstAction.get(idx).strLabel();
+        }
+        String strLead = flagFirst ? "First start - this is what Raposza found on this machine."
+                : "This is what Raposza found on this machine.";
+        String strFound = report.foundOffered() == null ? ""
+                : "\n\"" + MachineCheck.Action.USE_FOUND.strLabel() + "\" sets the "
+                        + report.foundOffered().kind().strLabel() + " directory to "
+                        + report.foundOffered().dir() + ".";
+        int idxChosen = Modals.idxOption(this, strLead + "\n\n" + report.strText() + strFound,
+                arrOption, arrOption[0]);
+        MachineCheck.Action action = idxChosen < 0 ? MachineCheck.Action.CLOSE
+                : lstAction.get(idxChosen);
+
+        switch (action) {
+            // A DPM INSTALL RUNS ON ITS OWN THREAD, and a fixture offer raised
+            // while it runs would be a second question about a toolchain that
+            // is not there yet. The offer is on the Settings tab afterwards.
+            case INSTALL_DPM -> installDpmRequested();
+            case INSTALL_DPM_FILE -> installDpmFromFile();
+            case INSTALL_SPLICE -> {
+                installSpliceRequested();
+                if (runAfter != null)
+                    runAfter.run();
+            }
+            case USE_FOUND -> {
+                useFound(report.foundOffered());
+                if (runAfter != null)
+                    runAfter.run();
+            }
+            case CLOSE -> {
+                if (runAfter != null)
+                    runAfter.run();
+            }
+        }
+    }
+
+
+    /**
+     * Points the setting of a found root's kind at it, and reads the machine
+     * again - the rescan off the event thread, the boxes refilled on it.
+     *
+     * @param found what the check found, or null
+     */
+    private void useFound(MachineCheck.Found found) {
+        if (found == null)
+            return;
+        RaposzaSettings settingsNow = RaposzaSettings.current();
+        MachineCheck.Kind kind = found.kind();
+        RaposzaSettings settingsNew = new RaposzaSettings(settingsNow.dirHome(),
+                settingsNow.nPortMint(), settingsNow.nPortDiscovery(), settingsNow.strLine(),
+                settingsNow.strLauncher(), settingsNow.nPortFirst(),
+                settingsNow.nPortPostgres(), settingsNow.nSecondsReady(),
+                settingsNow.flagOfferAviation(), settingsNow.flagOfferPharma(),
+                settingsNow.strUrlOidc(), settingsNow.nPortUiFirst(),
+                kind == MachineCheck.Kind.DAML ? found.dir() : settingsNow.dirDaml(),
+                kind == MachineCheck.Kind.DPM ? found.dir() : settingsNow.dirDpm(),
+                kind == MachineCheck.Kind.SPLICE ? found.dir() : settingsNow.dirSplice(),
+                settingsNow.nPortRawar(), settingsNow.filePqs());
+        try {
+            RaposzaSettings.store(settingsNew);
+        }
+        catch (IOException | RuntimeException ex) {
+            Modals.error(this, "The " + kind.strLabel() + " directory could not be saved: "
+                    + Failures.strWhy(ex));
+            return;
+        }
+        paneSettings.refresh();
+        logMain.append(kind.strLabel() + " directory set to " + found.dir() + ".");
+        footerNotice(kind.strLabel() + " directory set");
+
+        Thread threadRescan = new Thread(() -> {
+            SandboxService.rescanCanton();
+            List<String> lstSplice = SpliceInstallations.lstVersion();
+            Map<String, String> mapShown = new HashMap<>();
+            for (String strVersion : lstSplice) {
+                mapShown.put(strVersion, SpliceInstallations.strShown(strVersion));
+            }
+            SwingUtilities.invokeLater(() -> {
+                if (!isDisplayable())
+                    return;
+                if (isLocalNet())
+                    form.useSplice(lstSplice, mapShown);
+                else
+                    form.rescan(null);
+                refreshBanner();
+            });
+        }, "sandbox-found-rescan");
+        threadRescan.setDaemon(true);
+        threadRescan.start();
+    }
+
+
+    /**
+     * DPM COULD NOT BE DOWNLOADED, SO IT IS OFFERED FROM FILE - his
+     * instruction, 2026-10-30: "If no download, suggest install from file."
+     * The archive is the one the download fetches; its own `dpm` bootstraps
+     * it, and the SDK it carries is selected as after a download.
+     *
+     * @param strError why the download failed
+     */
+    private void offerDpmFromFile(String strError) {
+        HostPlatform platform = HostPlatform.ofDefaults();
+        String strArchive = DpmBootstrap.strArchive("<version>", platform);
+        String[] arrOption = { "Install from file...", "Cancel" };
+        int idx = Modals.idxOption(this, "DPM could not be downloaded: " + strError
+                + "\n\nWhere downloads are blocked, fetch the archive by hand and install it"
+                + " from file:\n" + DpmBootstrap.STR_URL_ARCHIVE + strArchive, arrOption,
+                arrOption[0]);
+        if (idx != 0)
+            return;
+        installDpmFromFile();
+    }
+
+
+    /**
+     * DPM from an archive fetched by hand - the second half of
+     * {@link #offerDpmFromFile}, and the first-start check's button of the
+     * same name for a machine known to have no download.
+     */
+    private void installDpmFromFile() {
+        if (flagDpmInstalling)
+            return;
+        Path fileArchive = fileArchiveChosen("Install DPM from file",
+                DpmBootstrap.strArchive("<version>", HostPlatform.ofDefaults()));
+        if (fileArchive == null)
+            return;
+
+        this.flagDpmInstalling = true;
+        applyControls(stateNow);
+        logMain.append("Installing DPM from " + fileArchive.getFileName() + ".");
+        Thread threadInstall = new Thread(() -> {
+            try {
+                VersionId version = toolchain(null).versionInstallDpmFromFile(fileArchive,
+                        dirInstallWork());
+                SwingUtilities.invokeLater(() -> installDpmDone(version, null));
+            }
+            catch (IOException | RuntimeException ex) {
+                SwingUtilities.invokeLater(() -> installDpmDone(null,
+                        Failures.strWhy(ex)));
+            }
+        }, "raposza-dpm-install-file");
+        threadInstall.setDaemon(true);
+        threadInstall.start();
+    }
+
+
+    /**
+     * @param strTitle the chooser's title
+     * @param strArchive the archive name it is for, shown in the filter
+     * @return the archive chosen, or null when none was
+     */
+    private Path fileArchiveChosen(String strTitle, String strArchive) {
+        // THE USER'S HOME, not Documents - his finding on the WinVM, 2026-10-30.
+        // A JFileChooser with no directory opens in Documents on Windows.
+        JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
+        chooser.setFileHidingEnabled(false);
+        chooser.setDialogTitle(strTitle);
+        chooser.setFileFilter(new FileNameExtensionFilter("DPM SDK archive (" + strArchive + ")",
+                "zip", "gz"));
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION)
+            return null;
+        return chooser.getSelectedFile().toPath();
     }
 
 
@@ -5022,7 +5580,7 @@ public final class SandboxWindow extends JFrame {
         }
         catch (IllegalArgumentException ex) {
             // A PORT FIELD THAT IS NOT A PORT, on a stopped stack - D-852.
-            warn(String.valueOf(ex.getMessage()));
+            warn(Failures.strWhy(ex));
             return;
         }
         // THE CLUSTER PATH TOO, and before the stop: on this topology it comes
@@ -5268,7 +5826,7 @@ public final class SandboxWindow extends JFrame {
         // STACK; the fixture is a second thing in flight that the stack knows
         // nothing about, and STOPPED is exactly the state it runs in.
         btnStart.setEnabled(controls.flagStart() && !flagAviationBusy && !flagPharmaBusy
-                && !flagSnapshotBusy);
+                && !flagSnapshotBusy && !flagSpliceChecking && !flagCantonInstalling);
         btnStop.setEnabled(controls.flagStop());
         btnReset.setEnabled(controls.flagReset());
         // AND NEITHER IS Save snapshot - operator instruction. The fixture
@@ -5280,7 +5838,7 @@ public final class SandboxWindow extends JFrame {
         form.setInputEnabled(controls.flagInput());
         // AND NOT WHILE DPM INSTALLS - his finding, 2026-10-13. The rule above
         // would give the button back on every state change during it.
-        if (flagDpmInstalling)
+        if (flagDpmInstalling || flagCantonInstalling)
             form.setInstallEnabled(false);
         paneDars.setInputEnabled(controls.flagInput());
         // WHAT A RUNNING STACK IS BUILT ON is locked on the Settings tab by
@@ -5446,7 +6004,7 @@ public final class SandboxWindow extends JFrame {
             }
         }
         catch (RuntimeException ex) {
-            return String.valueOf(ex.getMessage());
+            return Failures.strWhy(ex);
         }
 
         Properties props;
@@ -5454,7 +6012,7 @@ public final class SandboxWindow extends JFrame {
             props = propsOfRun();
         }
         catch (IllegalArgumentException ex) {
-            return String.valueOf(ex.getMessage());
+            return Failures.strWhy(ex);
         }
         Path dirCluster = dirClusterNow();
         if (dirCluster == null)
@@ -5505,7 +6063,7 @@ public final class SandboxWindow extends JFrame {
             snapshotsHere.delete(strName == null ? "" : strName.trim());
         }
         catch (RuntimeException ex) {
-            return String.valueOf(ex.getMessage());
+            return Failures.strWhy(ex);
         }
 
         milestone("Deleted snapshot " + strName);

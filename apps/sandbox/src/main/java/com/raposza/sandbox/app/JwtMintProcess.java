@@ -207,9 +207,9 @@ public final class JwtMintProcess {
     /** The last exit code, or -1 when nothing has exited. */
     private volatile int nExit = -1;
 
-    private transient Process proc;
+    private transient volatile Process proc;
 
-    private transient Thread threadPump;
+    private transient volatile Thread threadPump;
 
     private transient Thread threadShutdown;
 

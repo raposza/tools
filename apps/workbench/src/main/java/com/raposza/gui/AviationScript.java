@@ -6,6 +6,7 @@ import com.raposza.api.model.Contract;
 import com.raposza.api.model.PartyInfo;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * The script the CaQL editor opens with when the ledger is the Aviation
@@ -117,19 +118,19 @@ public final class AviationScript {
 
     private static final String USER_RELEASE = "releaseauthority";
 
-    private static final String HINT_CONTROL = "MaintenanceControl-";
+    private static final String HINT_CONTROL = "MaintenanceControl";
 
-    private static final String HINT_TECHNICIAN = "Technician-";
+    private static final String HINT_TECHNICIAN = "Technician";
 
-    private static final String HINT_INSPECTOR = "Inspector-";
+    private static final String HINT_INSPECTOR = "Inspector";
 
-    private static final String HINT_ENGINEERING = "Engineering-";
+    private static final String HINT_ENGINEERING = "Engineering";
 
-    private static final String HINT_QUALITY = "Quality-";
+    private static final String HINT_QUALITY = "Quality";
 
-    private static final String HINT_CONFIG = "ConfigurationControl-";
+    private static final String HINT_CONFIG = "ConfigurationControl";
 
-    private static final String HINT_RELEASE = "ReleaseAuthority-";
+    private static final String HINT_RELEASE = "ReleaseAuthority";
 
     /** What `Main.daml` stamps on every contract of the fixture. */
     private static final String STR_FIXTURE = "AVIATION-1";
@@ -457,9 +458,20 @@ public final class AviationScript {
 
 
     /**
+     * THE ROLE BY ITS ID HINT OR BY ITS DISPLAY NAME - the two generations
+     * name it differently.
+     *
+     * 3.x Daml Script appends a dash and eight hex digits to the text
+     * `allocateParty` was given: `MaintenanceControl-d4d95138::1220...`,
+     * measured on 3.4.4 to 3.5.18. 2.x `allocateParty` sets the DISPLAY NAME
+     * and the participant generates the id, `party-63ea2de5-...::1220...`,
+     * measured on 2.8.12, so on 2.x the display name is all that names the
+     * role. Until 2026-10-29 only the id was read and a 2.9.6 ledger got no
+     * starter - reported that day.
+     *
      * @param lstParty the parties
-     * @param strHint what the fixture names the role
-     * @return the one party id starting with it, or null when it is not there
+     * @param strHint what the fixture allocates the role as
+     * @return the one party that is that role, or null when it is not there
      *         or is there twice
      */
     private static String idFor(List<PartyInfo> lstParty, String strHint) {
@@ -467,8 +479,11 @@ public final class AviationScript {
         if (lstParty == null)
             return null;
 
+        Pattern patId = Pattern.compile(Pattern.quote(strHint) + "(-[0-9a-f]{8})?::.*");
         for (PartyInfo party : lstParty) {
-            if (party.idParty() == null || !party.idParty().startsWith(strHint))
+            if (party.idParty() == null)
+                continue;
+            if (!patId.matcher(party.idParty()).matches() && !strHint.equals(party.nameDisplay()))
                 continue;
             if (idFound != null)
                 return null;

@@ -35,6 +35,9 @@ class ToolchainInstallTest {
 
     private static final String STR_CHATTER = "a line the window should see";
 
+    private static final String STR_PATH_HINT =
+            "Please add \"C:\\Users\\rztest\\AppData\\Roaming\\dpm\\bin\" to your PATH";
+
     @TempDir
     Path dirTemp;
 
@@ -126,6 +129,9 @@ class ToolchainInstallTest {
             }
             else {
                 lineStep.accept(STR_CHATTER);
+                // WHAT DPM's BOOTSTRAP ENDS WITH, measured on the WinVM 2026-10-30.
+                if (lstCommand.contains(DpmBootstrap.STR_CMD_BOOTSTRAP))
+                    lineStep.accept(STR_PATH_HINT);
             }
             return nExitNext;
         };
@@ -454,6 +460,62 @@ class ToolchainInstallTest {
 
         assertEquals(VersionId.of(3, 5, 16), version);
         assertTrue(lstSaid.contains("Canton 3.5.16 installed"), lstSaid.toString());
+    }
+
+
+    /** FROM FILE - 2026-10-30: unpacked and bootstrapped, and nothing fetched. */
+    @Test
+    void anArchiveFromDiskIsUnpackedAndBootstrappedAndNothingIsFetched() throws IOException {
+        Path fileArchive = dirTemp.resolve("dpm-3.6.3-windows-amd64.zip");
+        Files.writeString(fileArchive, "stub");
+
+        VersionId version = install("3.5.7", rootsBare(dirTemp), HostPlatform.WINDOWS_X64)
+                .versionInstallDpmFromFile(fileArchive, dirTemp.resolve("work"));
+
+        assertEquals(VersionId.of(3, 6, 3), version);
+        assertTrue(lstFetched.isEmpty(), lstFetched.toString());
+        assertEquals(2, lstRun.size());
+        assertEquals("tar", lstRun.get(0).get(0));
+        assertTrue(lstRun.get(0).contains(fileArchive.toString()), lstRun.get(0).toString());
+        assertEquals("bootstrap", lstRun.get(1).get(1));
+    }
+
+
+    @Test
+    void aFailedUnpackIsNotBootstrapped() throws IOException {
+        Path fileArchive = dirTemp.resolve("dpm-3.6.3-linux-amd64.tar.gz");
+        Files.writeString(fileArchive, "stub");
+        nExitNext = 2;
+
+        assertThrows(IOException.class, () -> install("3.5.7", rootsBare(dirTemp),
+                HostPlatform.LINUX_X64).versionInstallDpmFromFile(fileArchive,
+                        dirTemp.resolve("work")));
+        assertEquals(1, lstRun.size());
+    }
+
+
+    @Test
+    void theVersionIsReadOffTheArchiveName() {
+        assertEquals(VersionId.of(3, 6, 3),
+                ToolchainInstall.versionOfArchive("dpm-3.6.3-windows-amd64.zip"));
+        assertEquals(VersionId.of(3, 5, 1),
+                ToolchainInstall.versionOfArchive("dpm-3.5.1-linux-amd64.tar.gz"));
+        assertEquals(null, ToolchainInstall.versionOfArchive("sdk.zip"));
+        assertEquals(null, ToolchainInstall.versionOfArchive("dpm-latest-linux-amd64.tar.gz"));
+    }
+
+
+    /** The bootstrap's PATH request is not the window's to show - 2026-10-30. */
+    @Test
+    void theBootstrapsPathRequestDoesNotReachTheWindow() throws IOException {
+        Path fileArchive = dirTemp.resolve("dpm-3.6.3-windows-amd64.zip");
+        Files.writeString(fileArchive, "stub");
+
+        install("3.5.7", rootsBare(dirTemp), HostPlatform.WINDOWS_X64)
+                .versionInstallDpmFromFile(fileArchive, dirTemp.resolve("work"));
+
+        assertTrue(lstSaid.contains(STR_CHATTER), lstSaid.toString());
+        assertFalse(lstSaid.contains(STR_PATH_HINT), lstSaid.toString());
     }
 
 }

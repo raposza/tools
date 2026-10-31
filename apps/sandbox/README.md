@@ -45,7 +45,7 @@ settings when its own `--version` names the line, and the in-process mock
 otherwise.
 
 It starts the newest installed Canton on line 3.5 by default, on Canton's own port block,
-with an embedded PostgreSQL on 33321 and a temporary cluster. The status file
+with an embedded PostgreSQL on 32101 and a temporary cluster. The status file
 `sandbox.properties` in the work directory carries every port, the JDBC url and
 the participant id while the stack runs, and is removed when it stops.
 

@@ -6,11 +6,34 @@
 code, from a static reading of this tree on 2026-09-25, read again on
 2026-09-26 against the tree released as 0.4.0, on 2026-09-27 for 0.4.1, on
 2026-10-05 for 0.5.0, on 2026-10-06 for 0.5.0 with Raposza OIDC 0.5.1, and on
-2026-10-14 for 0.6.0, on 2026-10-14 for 0.6.1, and on 2026-10-26 for 0.6.2.
+2026-10-14 for 0.6.0, on 2026-10-14 for 0.6.1, on 2026-10-26 for 0.6.2, and
+on 2026-10-31 for 0.6.3.
 Nothing in it was
 established by a third party, and no third party has signed anything about it.
 When an external audit exists it will be published beside this document,
 unedited.
+
+**Reviewed 2026-10-31 for 0.6.3.** The changes since 0.6.2 were read against
+the tree, and `SECURITY.md` with them; Raposza OIDC stays at 0.5.1. **ADDED:**
+the debug log every window writes - in section 4, in section 6 and as L-18:
+one file with every log line, the settings file and the proxy and JVM
+environment variables, which a user is asked to send; DPM installed from an
+archive the user chooses, and a Canton installed for a Splice release through
+DPM or from file, in sections 1 and 2; the `install` directory, in section 4.
+**ONE OMISSION WAS STALE and is corrected:** Install Splice from file predates
+0.6.2 and was in neither document - section 2 and L-1. The first-start check
+reads the disk and the environment and writes only the settings file; choosing
+a Splice release's Canton reads a page inside the bundle; neither starts a
+process or opens a port. ONE DEPENDENCY OF THE SHIPPED JARS MOVED: Guava
+33.3.0-jre to 33.7.2-jre, for CVE-2026-102554, GHSA-xxph-c9ww-hj94, published
+by the Guava project 2026-09-29 and in GitHub's advisory database 2026-10-27 -
+Java deserialization of a Guava collection allocates from a size
+the stream declares and runs out of memory. No code in this tree reads a Java
+serialized stream; the version is raised regardless. At build time - section
+9: the jsoup forced into maven-site-plugin, 1.23.1 to 1.23.2, and the fixed
+jsoup 1.23.2, XStream 1.4.21 and plexus-utils 4.0.3 forced into
+maven-help-plugin 3.5.1, which the release workflow runs. The rest stands as
+reviewed for 0.6.2.
 
 **Reviewed 2026-10-26 for 0.6.2.** The changes since 0.6.1 were read against
 the tree, and `SECURITY.md` with them; Raposza OIDC stays at 0.5.1 and no
@@ -129,7 +152,7 @@ What the Sandbox runs:
 | Raposza OIDC | see below | `JwtMintProcess` |
 | `dpm`, `daml` | the installed toolchain | `ToolchainInstall`, `AviationRun`, `DamlScriptRun` |
 | `tar` | `PATH` | `Extract`, `SpliceAcquire` |
-| a downloaded installer: `dpm bootstrap`, `install.sh` / `install.bat` | the archive just unpacked - section 2 | `ToolchainInstall` via `InstallRunner` |
+| a downloaded installer: `dpm bootstrap`, `install.sh` / `install.bat`; and `dpm bootstrap` from a DPM archive the user chooses | the archive just unpacked - section 2 | `ToolchainInstall` via `InstallRunner` |
 | `splice-node` | the Splice bundle: `bin/splice-node` on Linux; on Windows, where that shell script cannot run, `lib/splice-node.jar` under `java` from the Sandbox's own runtime (`SpliceLaunch`) | `LocalNetRunner`, `SpliceCheck` |
 | `xdg-open` | `PATH`, only when `Desktop.browse` fails | `JwtPane` |
 
@@ -209,6 +232,7 @@ start. The Workbench downloads nothing.
 | a Splice bundle, about 1.5 GB | `https://github.com/digital-asset/decentralized-canton-sync/releases/download/v<v>/<v>_splice-node.tar.gz` | a row's Install in that dialog |
 | a help page as Markdown | `https://docs.canton.network/...` | AUTOMATICALLY when a help dialog opens |
 | `daml-script` and its dependencies | resolved by `dpm build` / `daml build` | the first fixture build for a Canton version |
+| the newest Daml SDK of the Canton line a Splice release names, and DPM first where it is missing | the DPM rows above, and `dpm` itself | **Download** in the dialog a LocalNetND start raises when no Canton of that line is installed |
 
 **TLS IS THE ONLY INTEGRITY CONTROL, AND WHAT IS DOWNLOADED IS THEN EXECUTED.**
 `platform/raposza-canton/.../install/Download.java` checks the HTTP status and,
@@ -223,6 +247,17 @@ how on each platform. That is L-1.
 `SOURCE.txt` beside the bundle as provenance. Nothing reads it back and nothing
 compares it with a published value. It records what was downloaded; it does not
 check it.
+
+**FROM FILE, NOTHING IS CHECKED AT ALL.** Where downloads are blocked the user
+fetches the archive elsewhere and picks it in a file chooser. **Install DPM
+from file...** - on the first-start check, after a failed DPM download, and as
+**Install from file...** for a Splice release's missing Canton - unpacks it
+with `tar` and runs its `bin/dpm bootstrap`
+(`ToolchainInstall.versionInstallDpmFromFile`). **Install from file...** in the
+Install Splice dialog copies a `<version>_splice-node.tar.gz` into the Splice
+directory, unpacks it and starts it once, as a download is
+(`SpliceAcquire.install`). No TLS is involved and no digest is compared: the
+file is trusted as the user's own. That is L-1 too.
 
 The version string from `.../install/latest` is trimmed and used in a URL and a
 file name without further validation. The Splice version is taken through the
@@ -321,6 +356,8 @@ The state root is `~/.raposza`, or `%APPDATA%\raposza` on Windows
 | `oidc-access/<port>/access.log` | the provider's access log, one line per request WITH ITS QUERY - so a mint for an HMAC participant leaves that participant's secret here. In `java.io.tmpdir` until 2026-10-05 | **`rwx------`** on both directories where the file system has POSIX permissions; the file takes the umask |
 | `packages/` | cached Daml-LF packages | umask; temporary file then atomic move |
 | `localnet/pgshim/` (Windows) | the data source classes put first on LocalNetND's classpaths - section 1 | umask; rewritten before each start |
+| `install/` | the DPM archive the window downloads and the trees it and a chosen archive are unpacked into; nothing removes them | umask |
+| `logs/sandbox-<UTC stamp>-<pid>.log` | the debug log, one per window - section 6; the newest ten are kept and older ones deleted when a window opens | umask, the directory too |
 
 The embedded PostgreSQL's binaries are unpacked into `java.io.tmpdir`, or,
 when that fails, into `raposza-tmp` beside the Sandbox jar (`SandboxPostgres`).
@@ -433,6 +470,21 @@ OIDC's command line, which carries its admin password, is not logged.
   and `client_id` from its query and no Authorization header; the file behind
   it keeps the whole query - section 4.
 
+**The debug log - all of it in one file, made to be sent.** Every window
+writes `logs/sandbox-<UTC stamp>-<pid>.log` under the state root (`DebugLog`,
+`LogTee`, `LogPane.useDebugLog`). It receives every line the console and every
+log pane receive, unfiltered and untrimmed, so everything this section says
+reaches a log reaches that file too: LocalNetND's database password, its HS256
+secret and its token with no expiry, the identity provider's admin user and
+password as its log pane states them at start, and every command line as
+logged. Its header adds the Sandbox's command line, the JVM's arguments, the
+settings file verbatim, and the environment variables `JAVA_HOME`,
+`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `DPM_HOME`, `DAML_HOME`, `APPDATA`,
+`LOCALAPPDATA`, `TMP`, `TEMP`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and
+`PATH`, verbatim: a proxy URL or a JVM option carrying a password is written as
+it is. The file is what a developer is asked to attach to a report, and
+whoever receives it receives all of the above - L-18.
+
 **On the process list.** A command-line argument is readable by any account
 that can list processes: scribe's token, client secret and database password,
 and Raposza OIDC's admin password, are visible there while those processes
@@ -499,7 +551,7 @@ in `platform/pom.xml`:
 | `com.daml:bindings-java` | 2.9.6 | Ledger API v1 |
 | `com.daml:daml-lf-archive-reader_2.13` | 3.4.11 | reading DARs: the Workbench's built-in reader, used when no installed Canton lends one - section 1. The Sandbox's pom excludes it from its `raposza-lf` dependency |
 | Bouncy Castle (`bcprov-jdk18on`) | 1.85 | not declared here: it arrives through the Daml artefacts, and the version is managed so that it is ours |
-| Guava | 33.3.0-jre | the same |
+| Guava | 33.7.2-jre | the same |
 | Scala library | 2.13.16 | the same - the Daml-LF reader's runtime |
 | embedded PostgreSQL (`io.zonky.test:embedded-postgres`) | 2.2.2 | the Sandbox's database |
 | PostgreSQL JDBC | 42.7.13 | the same |
@@ -586,16 +638,16 @@ CVE-2026-65182 and CVE-2026-68525 in Tomcat 10.1.58. Raising the versions in
 this tree would change the list and no byte the Sandbox ships.
 
 **4. Build time only - what maven-site-plugin 3.22.0 brings: commons-beanutils
-1.9.4, Jetty 9.4.58 and jsoup 1.23.1.** The poms state the site plugin's
+1.9.4, Jetty 9.4.58 and jsoup 1.23.2.** The poms state the site plugin's
 version because the enforcer's plugin-version rule checks the site lifecycle
 too; without it Maven falls back to 3.3, which brought commons-collections
 3.2.1, commons-beanutils 1.7.0 and Velocity 1.5. No
 build path here runs `site`: not `build.sh`, not `test.sh`, not the release
 workflow. The advisories: CVE-2025-48734 in commons-beanutils; GHSA-355h-qmc2-wpwf,
 GHSA-qh8g-58pp-2wxh, GHSA-2fvj-hgj9-j2gr and GHSA-7p3p-8qv8-m2vh in Jetty 9.4,
-whose line has no fixed release; and CVE-2026-75140 in jsoup, which the
-build forces to 1.23.1 for CVE-2026-71497. CVE-2026-75140 is fixed in jsoup
-1.23.2, released 2026-08-26 by jsoup's own changelog; 0.6.2 does not raise it.
+whose line has no fixed release. jsoup carries none: the build forces 1.23.2,
+which fixes CVE-2026-71497 (fixed in 1.23.1) and CVE-2026-75140 (fixed in
+1.23.2, released 2026-08-26 by jsoup's own changelog), since 0.6.3.
 
 **5. Plugins listed and not run by the build - and one the release workflow
 runs.** The list also holds plugins that are named and not executed: the
@@ -608,9 +660,11 @@ That is a statement about `build.sh`, `test.sh` and the release workflow
 only: a goal invoked by hand - `mvn site`, `mvn dependency:tree` on the
 aggregator - runs that plugin with what it brings. **maven-help-plugin 3.5.1
 IS RUN**, by the release workflow's `help:evaluate`, which reads the version to
-check against the tag. It brings jsoup 1.17.2 (CVE-2026-75140, CVE-2026-71497),
-XStream 1.4.20 (CVE-2024-47072) and plexus-utils 4.0.1 (CVE-2025-67030). Its
-only input is this repository's own POM at the tagged commit, which the same
+check against the tag. Its own POM brings jsoup 1.17.2 (CVE-2026-75140,
+CVE-2026-71497), XStream 1.4.20 (CVE-2024-47072) and plexus-utils 4.0.1
+(CVE-2025-67030); since 0.6.3 the build forces the fixed versions into it -
+jsoup 1.23.2, XStream 1.4.21 and plexus-utils 4.0.3 - and those are what it
+loads. Its only input is this repository's own POM at the tagged commit, which the same
 run then builds: whoever could hand it hostile input could change the build
 itself.
 
@@ -650,7 +704,9 @@ owed.
 
 * **L-1 Downloads are verified by TLS only, and then executed.** The DPM
   archive, the SDK archive and the Splice bundle are fetched, unpacked and run
-  with no digest and no signature check - section 2. **OWED:** an expected
+  with no digest and no signature check - section 2. An archive installed
+  from a file the user chooses - DPM, or a Splice bundle - is not checked at
+  all. **OWED:** an expected
   SHA-256 per artefact, checked before the `.part` file is moved into place,
   failing closed; and where the vendor publishes no digest, a statement that it
   does not.
@@ -699,6 +755,10 @@ owed.
   connects to can deny it service with an HTTP/2 `CONTINUATION` flood,
   GHSA-w9fj-cfpg-grvv. Point the Workbench at participants you trust -
   section 9.
+* **L-18 The debug log gathers every log line into one file meant to be
+  sent** - the test credentials, LocalNetND's token with no expiry, the
+  settings file and the proxy and JVM environment variables verbatim, written
+  with the umask's permissions - section 6. Read it before sending it.
 
 
 ## 12 - The trust boundary, stated plainly

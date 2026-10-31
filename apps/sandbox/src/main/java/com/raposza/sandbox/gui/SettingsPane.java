@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.sandbox.gui;
 
+import com.raposza.canton.install.ToolchainRoots;
+import com.raposza.runtime.localnet.SpliceInstallations;
 import com.raposza.runtime.settings.RaposzaSettings;
 
 import java.awt.BorderLayout;
@@ -26,6 +28,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JCheckBox;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -157,6 +160,17 @@ public final class SettingsPane extends JPanel {
      */
     private final JButton btnFoundingReset = new JButton("Reset founding");
 
+    /** The first-start check, again - R1, his "resettable from Settings". */
+    private final JButton btnMachineCheck = new JButton("Check this machine");
+
+    /**
+     * FlatLaf's client property for the text a blank field shows - R3. Named
+     * by its string so the pane needs no FlatLaf type.
+     */
+    static final String STR_PROP_PLACEHOLDER = "JTextField.placeholderText";
+
+    private transient Runnable runMachineCheck;
+
     /** Whether a founding snapshot exists for what is selected, and for what. */
     private final JLabel lblFounding = new JLabel();
 
@@ -262,6 +276,11 @@ public final class SettingsPane extends JPanel {
         btnFoundingReset.addActionListener(evt -> {
             if (runFounding != null)
                 runFounding.run();
+        });
+        btnMachineCheck.setEnabled(false);
+        btnMachineCheck.addActionListener(evt -> {
+            if (runMachineCheck != null)
+                runMachineCheck.run();
         });
 
         addHierarchyListener(evt -> {
@@ -389,6 +408,25 @@ public final class SettingsPane extends JPanel {
 
 
     /**
+     * @param runNew what `Check this machine` does, or null to leave it
+     *        disabled
+     */
+    public void useMachineCheckAction(Runnable runNew) {
+        this.runMachineCheck = runNew;
+        btnMachineCheck.setEnabled(runNew != null);
+    }
+
+
+    /**
+     * @param flagOn whether `Check this machine` can be pressed - not while a
+     *        check is reading the disk
+     */
+    public void setMachineCheckEnabled(boolean flagOn) {
+        btnMachineCheck.setEnabled(flagOn && runMachineCheck != null);
+    }
+
+
+    /**
      * @param runNew what the `Reset founding` button does, or null to leave
      *        it disabled
      */
@@ -460,6 +498,54 @@ public final class SettingsPane extends JPanel {
             flagLoading = false;
         }
         lblFile.setText(RaposzaSettings.fileStore().toString());
+        showEffective();
+    }
+
+
+    /**
+     * WHAT A BLANK DIRECTORY STANDS FOR, shown in the field and written
+     * nowhere - R3, his handover of 2026-10-30: a blank field read as "not
+     * set" when it meant "the default", and nothing said which default.
+     *
+     * The placeholder shows only while the field is blank, so it is never
+     * read back as a value and never saved. Read OFF THE EVENT THREAD - the
+     * lookup walks PATH - and put up when it is in.
+     */
+    private void showEffective() {
+        Thread threadRead = new Thread(() -> {
+            String strDaml = strDefault(ToolchainRoots.ofUnset().dirDaml(),
+                    ToolchainRoots.strFromDaml());
+            String strDpm = strDefault(ToolchainRoots.ofUnset().dirDpm(),
+                    ToolchainRoots.strFromDpm());
+            String strSplice = strDefault(SpliceInstallations.dirRootDefault(),
+                    ToolchainRoots.STR_FROM_DEFAULT);
+            SwingUtilities.invokeLater(() -> {
+                useDefault(RaposzaSettings.STR_KEY_DIR_DAML, strDaml);
+                useDefault(RaposzaSettings.STR_KEY_DIR_DPM, strDpm);
+                useDefault(RaposzaSettings.STR_KEY_DIR_SPLICE, strSplice);
+            });
+        }, "sandbox-settings-defaults");
+        threadRead.setDaemon(true);
+        threadRead.start();
+    }
+
+
+    /**
+     * @param dir the directory a blank field stands for
+     * @param strFrom where it comes from, in words
+     * @return what the blank field shows
+     */
+    static String strDefault(Path dir, String strFrom) {
+        return "default: " + dir + " (" + strFrom + ")";
+    }
+
+
+    private void useDefault(String strKey, String strDefault) {
+        JTextField fld = mapField.get(strKey);
+        fld.putClientProperty(STR_PROP_PLACEHOLDER, strDefault);
+        fld.setToolTipText("<html>Blank uses the " + strDefault
+                + "<br>Type a directory to use another one.</html>");
+        fld.repaint();
     }
 
 
@@ -647,7 +733,14 @@ public final class SettingsPane extends JPanel {
         nRow = addPathRow(pnl, nRow, RaposzaSettings.STR_KEY_DIR_SPLICE, "Splice directory");
         // A FILE, NOT A DIRECTORY, and by its full path: a scribe jar's name
         // is not a contract - raposza/tools#4.
-        addFileRow(pnl, nRow, RaposzaSettings.STR_KEY_FILE_PQS, STR_LABEL_PQS);
+        nRow = addFileRow(pnl, nRow, RaposzaSettings.STR_KEY_FILE_PQS, STR_LABEL_PQS);
+        // WHAT THIS MACHINE HAS, on request - the first-start check again.
+        JPanel pnlHold = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        pnlHold.setOpaque(false);
+        pnlHold.add(btnMachineCheck);
+        GridBagConstraints gbcHold = gbc(0, nRow, 1.0, GridBagConstraints.HORIZONTAL);
+        gbcHold.gridwidth = 3;
+        pnl.add(pnlHold, gbcHold);
         return pnl;
     }
 
@@ -875,6 +968,14 @@ public final class SettingsPane extends JPanel {
      */
     JCheckBox checkOfferAviation() {
         return chkOfferAviation;
+    }
+
+
+    /**
+     * @return `Check this machine`, for tests
+     */
+    JButton buttonMachineCheck() {
+        return btnMachineCheck;
     }
 
 

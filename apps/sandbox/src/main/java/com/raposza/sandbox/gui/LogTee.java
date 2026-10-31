@@ -79,6 +79,9 @@ public final class LogTee {
      * @param strLine one line, without its terminator
      */
     public static synchronized void accept(String strLine) {
+        // EVERY LINE, whether or not a pane has attached - his instruction,
+        // 2026-10-30: the event thread's exceptions arrive here and nowhere else.
+        DebugLog.line(DebugLog.SRC_CONSOLE, strLine);
         if (sink != null) {
             sink.accept(strLine);
             return;

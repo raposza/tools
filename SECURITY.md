@@ -36,11 +36,12 @@ and no backports; a fix arrives as a new version.
 
 ## When this was last reviewed
 
-**Reviewed 2026-10-26 for 0.6.2**, against the tree as it stands -
+**Reviewed 2026-10-31 for 0.6.3**, against the tree as it stands -
 `docs/security-review.md` carries the result, with Raposza OIDC at 0.5.1. The
 first review was 2026-09-25, the second 2026-09-26 for 0.4.0, the third
 2026-09-27 for 0.4.1, the fourth 2026-10-05 for 0.5.0, the fifth 2026-10-06
-for 0.5.0, the sixth 2026-10-14 for 0.6.0, the seventh 2026-10-14 for 0.6.1.
+for 0.5.0, the sixth 2026-10-14 for 0.6.0, the seventh 2026-10-14 for 0.6.1,
+the eighth 2026-10-26 for 0.6.2.
 
 ## The short statement of the model
 
@@ -48,7 +49,7 @@ for 0.5.0, the sixth 2026-10-14 for 0.6.0, the seventh 2026-10-14 for 0.6.1.
 Sandbox starts a Canton stack, a database and an identity provider as ordinary
 processes of the user who runs it, with test credentials, so that a developer
 can build against them. Nothing it starts is meant to be reachable from a
-network anyone else is on. Five consequences you should read before running it:
+network anyone else is on. Six consequences you should read before running it:
 
 * **Every credential the Sandbox creates is a published test credential.** Web
   UI users and the identity provider's admin use the password `123456`; the
@@ -72,9 +73,17 @@ network anyone else is on. Five consequences you should read before running it:
 * **Artefacts the Sandbox downloads are checked by TLS and nothing else, and
   then executed.** The toolchain installer, the SDK installer and the Splice
   bundle are fetched on a button press, unpacked and run. No digest or
-  signature is verified.
+  signature is verified. A DPM archive or a Splice bundle installed from a
+  file you choose is not checked at all.
 * **Test data, tokens and database passwords are written to disk in clear**,
   under `~/.raposza` and `~/.splice`, mostly with your umask's permissions.
+* **The debug log gathers all of it into one file you are asked to send.**
+  Every Sandbox window writes `logs/sandbox-<time>-<pid>.log` under the
+  Raposza directory: every log line, unfiltered - the test credentials above
+  and LocalNetND's token that never expires among them - the settings file,
+  and the proxy and Java environment variables exactly as they are set. A
+  proxy password in `HTTPS_PROXY`, `HTTP_PROXY` or `JAVA_TOOL_OPTIONS` is in
+  it. Read it before you attach it anywhere.
 
 `docs/security-review.md` is the full posture document: what executes, what is
 downloaded and how its integrity is established, what listens and with what

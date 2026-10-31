@@ -1,9 +1,9 @@
 <!-- Copyright (c) 2026 bentzn -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Author Claude/bentzn  Generated 2026-10-16T08:55:00Z  Updated 2026-10-26T18:45:00Z -->
-# Raposza Tools 0.6.2 — skill document for an AI assistant
+# Raposza Tools 0.6.3 — skill document for an AI assistant
 
-This document is written for an AI assistant, such as Claude, that guides a person through installing and using Raposza Sandbox and Raposza Workbench. It replaces the READMEs for that purpose. Everything here describes Raposza Tools 0.6.2, the release at <https://github.com/raposza/tools/releases/tag/v0.6.2>.
+This document is written for an AI assistant, such as Claude, that guides a person through installing and using Raposza Sandbox and Raposza Workbench. It replaces the READMEs for that purpose. Everything here describes Raposza Tools 0.6.3, the release at <https://github.com/raposza/tools/releases/tag/v0.6.3>.
 
 ---
 
@@ -11,7 +11,7 @@ This document is written for an AI assistant, such as Claude, that guides a pers
 
 * **Start with section 1, every time: give the person the choice, and recommend path A.** Path A is clone the source, audit it, build it locally, run. Path B is download the released jars and run. Recommend A before anything else, and most of all when the person is on a restricted computer in a corporate network: security is a high priority for Raposza. Say why in one or two sentences (section 1), then let the person choose, and follow the path they choose without arguing it again.
 * **Ask before you guide.** You need to know the operating system (Linux or Windows), whether the machine may reach the internet (GitHub, Maven Central, `get.digitalasset.com`), whether Java 21 or newer is installed, and whether corporate policy restricts what may be downloaded or run.
-* **Do not invent.** Every argument, button, tab, path and port in this document was read from the 0.6.2 source. If the person asks for something not described here, say so. Do not guess a flag or a menu item. The source tree is the authority: point to the file that settles the question.
+* **Do not invent.** Every argument, button, tab, path and port in this document was read from the 0.6.3 source. If the person asks for something not described here, say so. Do not guess a flag or a menu item. The source tree is the authority: point to the file that settles the question.
 * **One step at a time.** Give one command or one action, then wait for the result. On Linux commands run in a shell; on Windows they run in PowerShell. Nothing in Raposza needs administrator rights.
 * **Ask for evidence.** When something fails, ask for the exact text: the terminal output, or the window's **Debug** tab (section 4.9). The Sandbox reports what it is doing in its log, line by line.
 * **Say what the person is exposing.** Raposza is developer tooling for one workstation and is not hardened (section 12). Before the person runs it on a shared machine, make sure they have read that section.
@@ -46,10 +46,10 @@ The build fetches its dependencies and plugins from Maven Central, so it needs a
 ```
 git clone https://github.com/raposza/tools.git
 cd tools
-git checkout v0.6.2
+git checkout v0.6.3
 ```
 
-The Sandbox embeds a second product, **Raposza OIDC**, the local OpenID Provider. Its source is a separate repository, <https://github.com/raposza/OIDC>. Tools 0.6.2 uses Raposza OIDC **0.5.1**, the value of `raposza.oidc.version` in `platform/pom.xml`. A plain Tools build takes that jar from Maven Central. To audit and build it as well, clone that repository, check out the tag for 0.5.1 and follow its own build instructions. Installing it into the local Maven repository (`mvn install`) makes the Tools build below use that build instead of the copy from Central.
+The Sandbox embeds a second product, **Raposza OIDC**, the local OpenID Provider. Its source is a separate repository, <https://github.com/raposza/OIDC>. Tools 0.6.3 uses Raposza OIDC **0.5.1**, the value of `raposza.oidc.version` in `platform/pom.xml`. A plain Tools build takes that jar from Maven Central. To audit and build it as well, clone that repository, check out the tag for 0.5.1 and follow its own build instructions. Installing it into the local Maven repository (`mvn install`) makes the Tools build below use that build instead of the copy from Central.
 
 ### 1.3 Path A - what to audit
 
@@ -86,11 +86,11 @@ mvn install -Papp
 `build.sh` is `mvn install -DskipTests`. `test.sh` is `mvn install -Papp`, plus a check that every module with tests actually ran them. The suite is headless and needs no Canton. `-Papp` builds the two application jars, which carry their dependencies:
 
 ```
-apps/sandbox/target/sandbox-0.6.2-app.jar
-apps/workbench/target/workbench-0.6.2-app.jar
+apps/sandbox/target/sandbox-0.6.3-app.jar
+apps/workbench/target/workbench-0.6.3-app.jar
 ```
 
-From here on, wherever this document says `sandbox-0.6.2-app.jar` or `workbench-0.6.2-app.jar`, use these files.
+From here on, wherever this document says `sandbox-0.6.3-app.jar` or `workbench-0.6.3-app.jar`, use these files.
 
 ### 1.5 Path A - run
 
@@ -99,7 +99,7 @@ Section 3. On Linux the repository root also has launchers: `./run-sandbox.sh` (
 ### 1.6 Path B - download and run
 
 1. Verify Java: `java -version` must show 21 or newer. If it does not, Java is available from <https://www.oracle.com/java/technologies/downloads/>.
-2. Download 3 files, `sandbox-0.6.2-app.jar`, `workbench-0.6.2-app.jar` and `SHA256SUMS`, from <https://github.com/raposza/tools/releases/tag/v0.6.2> into the Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
+2. Download 3 files, `sandbox-0.6.3-app.jar`, `workbench-0.6.3-app.jar` and `SHA256SUMS`, from <https://github.com/raposza/tools/releases/tag/v0.6.3> into the Downloads folder. On Windows, Edge warns about each jar: choose **Keep file**.
 3. Check the hashes. Both jars must report `OK`.
 
 Linux:
@@ -140,8 +140,8 @@ This release is tested with Java 21 or newer, Daml SDK 3.6.0, and Splice 0.8.3 a
 Linux and Windows, from the folder holding the jars - `apps/sandbox/target` and `apps/workbench/target` on path A, the Downloads folder on path B:
 
 ```
-java -jar sandbox-0.6.2-app.jar
-java -jar workbench-0.6.2-app.jar
+java -jar sandbox-0.6.3-app.jar
+java -jar workbench-0.6.3-app.jar
 ```
 
 Each in its own terminal or PowerShell window. Arguments go after the jar name (sections 5 and 7).
@@ -153,6 +153,8 @@ Each in its own terminal or PowerShell window. Arguments go after the jar name (
 ### 4.1 The first question
 
 The window opens with **What should this Sandbox start?**: **Single participant** ("one Canton, one database, the released Sandbox") or **LocalNetND** ("the Splice network natively: sv, app-provider and app-user"). Neither is preselected. The choice holds until the window is closed; to switch, close the window and start it again.
+
+**On a first start, the machine check comes next.** A first start is one with no settings file or no Raposza directory. The dialog opens with **First start - this is what Raposza found on this machine.** and lists DPM and the Daml Assistant (launcher, directory and where it comes from, SDKs), Splice (the directory, and per version the Canton it starts on or what it needs), installations elsewhere that the window does not use, the `java` on `PATH` the Sandbox starts Canton with, and **Can start now** for the Sandbox and LocalNetND. It offers only what is missing: **Download DPM** and **Install DPM from file...** when there is no DPM, **Install Splice...** on LocalNetND when no Splice 0.8 or later is installed, **Use the one found** when an installation elsewhere has what the one in use lacks, and **Close**. After a DPM install the fixture offer does not follow; the fixtures are on the Settings tab. **Check this machine** on the Settings tab shows the same dialog at any time.
 
 ### 4.2 Help on every field
 
@@ -191,7 +193,8 @@ Rows that do not apply to the selected mode are hidden.
 
 ### 4.4 Getting Canton — single participant
 
-* On a machine with no DPM the **SDK** box is empty. **Install** asks **Install DPM?**. **Yes** downloads DPM, Digital Asset's package manager, installs it with the Daml SDK it comes with, and selects that SDK. The download is large. The log says **Installed DPM with DAML SDK**, followed by the version.
+* On a machine with no DPM the **SDK** box is empty. **Download DPM** on the machine check (section 4.1), or **Install** beside the box and **Yes** to **Install DPM?**, downloads DPM, Digital Asset's package manager, about 1.2 GB, installs it with the Daml SDK it comes with, and selects that SDK. The log says **Installed DPM with DAML SDK**, followed by the version. A failed download offers the file instead.
+* **Downloads blocked:** fetch `dpm-<version>-linux-amd64.tar.gz` or `dpm-<version>-windows-amd64.zip` from `https://get.digitalasset.com/install/dpm-sdk/` on another machine and use **Install DPM from file...** on the machine check. The archive installs itself with no network. The chooser opens in the home directory.
 * With DPM present, **Install** opens **Install Daml SDK**: the published SDKs, newest first, those already installed marked, with **Install** per row and **Close**.
 * **DPM already installed somewhere else:** set **DPM directory** on the Settings tab (section 4.10). Installs from the window still land in the default location.
 * The box is read when the window opens. After installing outside the window, close and reopen it.
@@ -199,9 +202,10 @@ Rows that do not apply to the selected mode are hidden.
 ### 4.5 Getting Splice — LocalNetND
 
 * LocalNetND needs DPM too. Without it a banner at the top says "No Canton found. Raposza can install the Digital Asset Package Manager and the newest Canton it publishes." with **Install**.
-* **Install** beside the **Splice** box opens **Install Splice**: every published Splice version, newest first, with its size (around 800 MB down, 1.5 GB on disk) and what is already installed marked. "Loading the Splice versions. Give it a moment." while it reads them. A row's **Install** downloads that version into the Splice directory; the dialog closes when it is installed.
+* **Install** beside the **Splice** box opens **Install Splice**: every published Splice version from 0.8 on, newest first, with its size (around 800 MB down, 1.5 GB on disk) and what is already installed marked. 0.8 is the lowest LocalNetND runs. With downloads blocked the dialog says why the list could not be read. "Loading the Splice versions. Give it a moment." while it reads them. A row's **Install** downloads that version into the Splice directory; the dialog closes when it is installed.
 * **A Splice version already downloaded as a tar.gz file:** **Install from file...** in the same dialog. The file must keep the vendor's name, `<version>_splice-node.tar.gz`; a file named otherwise is refused, because the version is read from the name.
 * **Splice bundles already unpacked somewhere else:** set **Splice directory** on the Settings tab: `<directory>/<version>/splice-node`.
+* **The Canton a Splice version runs on** is read from the bundle: the newest installed patch of the Canton line the release names. Splice 0.9.4 names Canton 3.6.4 and runs on 3.6.3 when that is the newest 3.6 installed. The console and the debug log say which one, as `Splice 0.9.4 on Canton 3.6.3 open-source - released on 3.6.4; the newest 3.6 installed.` When no Canton of the line is installed, Start offers one: **Download** installs the newest Daml SDK of that line through DPM, and DPM first if it is missing; **Install from file...** takes a DPM archive of that line.
 
 ### 4.6 Starting and stopping
 
@@ -291,12 +295,12 @@ The form's values are remembered per version and edition, in `~/.raposza/profile
 Without `--cli` the window opens, and every other argument pre-fills its form. With `--cli` the stack runs in the terminal, touches no window code, and Ctrl-C stops it. `--help` and `--list` print and stop either way.
 
 ```
-java -jar sandbox-0.6.2-app.jar --help
-java -jar sandbox-0.6.2-app.jar --list
-java -jar sandbox-0.6.2-app.jar --cli
-java -jar sandbox-0.6.2-app.jar --cli --canton 3.5.14
-java -jar sandbox-0.6.2-app.jar --cli --auth JWKS --discovery 32001
-java -jar sandbox-0.6.2-app.jar --cli --fixture --auth JWKS --discovery 32001
+java -jar sandbox-0.6.3-app.jar --help
+java -jar sandbox-0.6.3-app.jar --list
+java -jar sandbox-0.6.3-app.jar --cli
+java -jar sandbox-0.6.3-app.jar --cli --canton 3.5.14
+java -jar sandbox-0.6.3-app.jar --cli --auth JWKS --discovery 32001
+java -jar sandbox-0.6.3-app.jar --cli --fixture --auth JWKS --discovery 32001
 ```
 
 On Linux in a clone, `./run-sandbox.sh` takes the same arguments.
@@ -355,8 +359,8 @@ The window opens on the connection dialog, **Connect to**:
 From the command line:
 
 ```
-java -jar workbench-0.6.2-app.jar --discovery http://127.0.0.1:32001/
-java -jar workbench-0.6.2-app.jar <path-to-ledger_hosts>
+java -jar workbench-0.6.3-app.jar --discovery http://127.0.0.1:32001/
+java -jar workbench-0.6.3-app.jar <path-to-ledger_hosts>
 ```
 
 The first opens directly on a Sandbox. The second pre-fills the standalone form from a participant catalogue; without an argument the catalogue is `~/.raposza/ledger_hosts`, and a missing one is not an error. The format is in `ledger_hosts.example` at the repository root:
@@ -430,7 +434,7 @@ Scope and audience are mutually exclusive; a profile carrying both is refused. T
 The Workbench jar runs a CaQL script headless:
 
 ```
-java -jar workbench-0.6.2-app.jar --script FILE --transcript FILE [--profile NAME] [--validate] [--catalogue FILE]
+java -jar workbench-0.6.3-app.jar --script FILE --transcript FILE [--profile NAME] [--validate] [--catalogue FILE]
 ```
 
 * The participant comes from the catalogue (section 6.1): `--catalogue`, else `~/.raposza/ledger_hosts`. `--profile` names the line, and is required when the catalogue has more than one. The line must say `rw` for a script that writes.
@@ -607,7 +611,7 @@ A `--cli` stack writes `sandbox.properties` in its work directory while it runs,
 
 ## 9. CaQL — complete reference
 
-This is the text of the Workbench's **Skills** page in 0.6.2, unchanged. For any other version, the Skills page of the running Workbench is the authority.
+This is the text of the Workbench's **Skills** page in 0.6.3, unchanged. For any other version, the Skills page of the running Workbench is the authority.
 
 ```
 CaQL - COMPLETE REFERENCE
@@ -1013,6 +1017,7 @@ Every choice is controlled by one organization and submitted from that organizat
 | Splice bundles | `~/.splice` | `%USERPROFILE%\.splice` |
 | LocalNetND's run directory | `~/.splice/native-localnet` | `%USERPROFILE%\.splice\native-localnet` |
 | DPM, unless set elsewhere | `~/.dpm` | `%APPDATA%\dpm` |
+| the debug logs, the newest ten | `~/.raposza/logs` | `%APPDATA%\raposza\logs` |
 
 To remove Raposza, delete the jars or the clone and those directories. DPM, the SDK and Canton are managed by DPM's own tools.
 
@@ -1027,6 +1032,8 @@ To remove Raposza, delete the jars or the clone and those directories. DPM, the 
 * **The Ledger API is unauthenticated unless authentication is asked for.** The window's default is JWKS; `--cli` without `--auth` is unauthenticated. A Canton **2.x** participant started by the Sandbox binds its Ledger API and Admin API on EVERY interface, and no authentication is configured on its Admin API. The RAWAR server on `127.0.0.1:31100` forwards `_ledger/` to the JSON Ledger API with whatever credential the caller sends.
 * **Downloads are checked by TLS and nothing else, and then executed**: DPM, the SDK installer and Splice bundles. No digest or signature is verified.
 * **Test data, tokens and database passwords are written to disk in clear**, under `~/.raposza` and `~/.splice`, mostly with the user's umask.
+* **An archive installed from file is not checked at all**: the DPM archive and the Splice bundle are trusted as the person's own.
+* **The debug log collects all of it.** Every window writes one file with every log line, the settings file and the proxy and Java environment variables as they are set. It carries the test credentials above, LocalNetND's token that never expires, and any password a proxy variable holds. Tell the person to read it before attaching it anywhere.
 * **The discovery document on `127.0.0.1:32001` publishes every JDBC password and a token URL per node**, to anything on the machine that can reach it.
 
 Vulnerabilities are reported to **info@raposza.com**, not in a public issue.
@@ -1035,7 +1042,8 @@ Vulnerabilities are reported to **info@raposza.com**, not in a public issue.
 
 ## 13. When something goes wrong
 
-* **Read the log first.** The Sandbox tab's log says what the window is doing; the **Debug** tab has one log per process. Ask the person to copy the lines around the first error.
+* **Read the debug log first.** Every window writes one file with everything: the console prints its path as `debug log:` when the window opens, in `~/.raposza/logs` (`%APPDATA%\raposza\logs` on Windows). Ask the person for that file rather than for lines copied from the panes. The Sandbox tab's log says what the window is doing; the **Debug** tab has one log per process.
+* **What is installed and what is missing:** **Settings** tab, **Check this machine** (section 4.1).
 * **The SDK or Splice box is empty.** Nothing is installed where the window looks. Install from the window (sections 4.4, 4.5), or set the directory on the Settings tab.
 * **A version is greyed out** in the SDK box: it has no runtime jar.
 * **PQS runs the mock.** The main log says why, in a line beginning "The Sandbox is not able to start PQS:". Install the SDK through DPM (section 4.4), or set **PQS scribe.jar** on the Settings tab.

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.awt.GraphicsEnvironment;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -86,6 +87,44 @@ class SpliceInstallDialogTest {
         waitFor(() -> dialog.strInstalled() != null);
 
         assertEquals("0.7.4", dialog.strInstalled());
+    }
+
+
+    /** A FAILURE WITH NO MESSAGE IS STILL A FAILURE - reported 2026-10-29. */
+    @Test
+    void aReleaseListThatFailsWithoutAMessageIsSaid() throws Exception {
+        SpliceInstallDialog dialog = new SpliceInstallDialog(null, Set.of(), () -> {
+            throw new ConnectException();
+        }, strVersion -> 1L, (strVersion, lineProgress) -> lineProgress.accept("1 of 1 MB"),
+                (fileArchive, lineProgress) -> "0.7.4");
+
+        waitFor(() -> String.valueOf(onEdt(dialog::strStatus))
+                .startsWith(SpliceInstallDialog.STR_UNREAD));
+
+        assertEquals(SpliceInstallDialog.STR_UNREAD + "java.net.ConnectException",
+                onEdt(dialog::strStatus));
+        assertEquals(List.of(), onEdt(dialog::lstOffered));
+        dialog.dispose();
+    }
+
+
+    /** And an install that fails without one is said, not taken for a success. */
+    @Test
+    void anInstallThatFailsWithoutAMessageIsSaid() throws Exception {
+        SpliceInstallDialog dialog = new SpliceInstallDialog(null, Set.of(), () -> List.of("0.8.1"),
+                strVersion -> 1L, (strVersion, lineProgress) -> lineProgress.accept("1 of 1 MB"),
+                (fileArchive, lineProgress) -> {
+                    throw new IOException();
+                });
+
+        SwingUtilities.invokeAndWait(() -> dialog.beginFile(Path.of("0.7.4_splice-node.tar.gz")));
+        waitFor(() -> String.valueOf(onEdt(dialog::strStatus))
+                .startsWith(SpliceInstallDialog.STR_FAILED));
+
+        assertEquals(SpliceInstallDialog.STR_FAILED + "java.io.IOException",
+                onEdt(dialog::strStatus));
+        assertNull(dialog.strInstalled());
+        dialog.dispose();
     }
 
 

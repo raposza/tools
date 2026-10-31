@@ -3,6 +3,7 @@
 package com.raposza.gui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -219,6 +220,55 @@ class AviationScriptTest {
         List<PartyInfo> lstTwice = new ArrayList<>(lstParty());
         lstTwice.add(party("Technician-00000000"));
         assertNull(AviationScript.strFor(lstTwice, lstTemplate()));
+    }
+
+
+    /**
+     * 2.x NAMES THE ROLE IN THE DISPLAY NAME: `allocateParty` sets it and the
+     * participant generates the id. Reported on 2.9.6, 2026-10-29: no starter.
+     */
+    private static List<PartyInfo> lstParty2x() {
+        List<PartyInfo> lstOut = new ArrayList<>();
+        int idx = 0;
+        for (String strName : List.of("MaintenanceControl", "Technician", "Inspector",
+                "Engineering", "Quality", "ConfigurationControl", "ReleaseAuthority")) {
+            lstOut.add(new PartyInfo("party-6" + idx + "ea2de5-44c3-4b53-997b-7bef2cba4e2c" + STR_NS,
+                    strName, true));
+            idx++;
+        }
+        return lstOut;
+    }
+
+
+    @Test
+    void aTwoXLedgerIsSeededByDisplayName() {
+        List<PartyInfo> lst2x = lstParty2x();
+
+        String strOut = AviationScript.strFor(lst2x, lstTemplate());
+
+        assertNotNull(strOut);
+        assertTrue(strOut.contains("AS " + ShortIds.text(lst2x.get(0).idParty()) + " QUERY"),
+                strOut);
+        assertTrue(strOut.indexOf(STR_NS) < 0, strOut);
+        for (String strLine : strOut.split("\\n")) {
+            assertTrue(strLine.length() <= AviationScript.CNT_WIDTH,
+                    strLine.length() + ": " + strLine);
+        }
+
+        // A display name that is not the role names nothing.
+        List<PartyInfo> lstRenamed = new ArrayList<>(lst2x);
+        lstRenamed.set(1, new PartyInfo(lst2x.get(1).idParty(), "Apprentice", true));
+        assertNull(AviationScript.strFor(lstRenamed, lstTemplate()));
+    }
+
+
+    /** A hint that only BEGINS with the role is another party. */
+    @Test
+    void aLongerHintIsNotTheRole() {
+        List<PartyInfo> lstLonger = new ArrayList<>(lstParty());
+        lstLonger.add(party("TechnicianLead-0a1b2c3d"));
+
+        assertNotNull(AviationScript.strFor(lstLonger, lstTemplate()));
     }
 
 }

@@ -128,8 +128,21 @@ public final class SpliceInstallations {
      * @return every staged version, newest first, never null
      */
     public static List<String> lstVersion() {
-        Path dirRoot = dirRoot();
+        return lstVersionIn(dirRoot());
+    }
+
+
+    /**
+     * The same, under any directory - the first-start check looks in places
+     * Splice is not set to be read from, R1.
+     *
+     * @param dirRoot a directory holding one directory per version
+     * @return every staged version under it, newest first, never null
+     */
+    public static List<String> lstVersionIn(Path dirRoot) {
         List<String> lstOut = new ArrayList<>();
+        if (dirRoot == null)
+            return lstOut;
         if (!Files.isDirectory(dirRoot))
             return lstOut;
 

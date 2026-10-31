@@ -146,6 +146,9 @@ public final class LogPane extends JPanel {
      */
     private int nOffsetLine = -1;
 
+    /** The tab name lines go to the debug log under, or null for none. */
+    private volatile String strSourceDebug;
+
     private final transient javax.swing.Timer timerSpin =
             new javax.swing.Timer(N_MS_FRAME, evt -> tickHere());
 
@@ -257,6 +260,18 @@ public final class LogPane extends JPanel {
      * @param strLine one line, without its terminator
      */
     public void append(String strLine) {
+        append(strLine, true);
+    }
+
+
+    /**
+     * @param strLine one line, without its terminator
+     * @param flagDebugLog false for a line the debug log already has - the
+     *        console's, routed here by the window
+     */
+    void append(String strLine, boolean flagDebugLog) {
+        if (flagDebugLog)
+            toDebugLog(strLine);
         if (SwingUtilities.isEventDispatchThread()) {
             flushHere();
             appendHere(strLine, false);
@@ -288,6 +303,7 @@ public final class LogPane extends JPanel {
      * @param strLine what the pending line should now say
      */
     public void replaceSpinning(String strLine) {
+        toDebugLog(strLine);
         onSwing(() -> replaceHere(strLine));
     }
 
@@ -299,6 +315,7 @@ public final class LogPane extends JPanel {
      * @param strLine one line, without its terminator
      */
     public void appendSpinning(String strLine) {
+        toDebugLog(strLine);
         onSwing(() -> appendHere(strLine, true));
     }
 
@@ -417,6 +434,27 @@ public final class LogPane extends JPanel {
      */
     public void useClock(boolean flagOn) {
         this.flagClock = flagOn;
+    }
+
+
+    /**
+     * EVERY LINE ALSO TO THE DEBUG LOG, under this name - his instruction,
+     * 2026-10-30. {@link DebugLog} says why. Stamped when it is appended, not
+     * when it is painted, so the file keeps the order lines were produced in.
+     *
+     * @param strSource the name, which is the tab's
+     * @return this pane
+     */
+    public LogPane useDebugLog(String strSource) {
+        this.strSourceDebug = strSource;
+        return this;
+    }
+
+
+    private void toDebugLog(String strLine) {
+        String strSource = strSourceDebug;
+        if (strSource != null)
+            DebugLog.line(strSource, strLine);
     }
 
 

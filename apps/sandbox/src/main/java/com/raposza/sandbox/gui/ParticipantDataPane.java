@@ -180,7 +180,7 @@ public final class ParticipantDataPane extends JPanel {
                 ledger = LedgerProbe.read(coord);
             }
             catch (SQLException | RuntimeException ex) {
-                strError = String.valueOf(ex.getMessage());
+                strError = Failures.strWhy(ex);
             }
             Ledger ledgerDone = ledger;
             String strErrorDone = strError;

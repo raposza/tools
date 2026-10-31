@@ -100,7 +100,7 @@ public final class JwtPane extends JPanel {
      * instruction, 2026-10-04. One line per request, out of Tomcat's access
      * log valve, worded by {@link OidcAccess}.
      */
-    private final LogPane logAccess = new LogPane();
+    private final LogPane logAccess = new LogPane().useDebugLog("OIDC access");
 
     private final transient LogTail tailAccess =
             new LogTail(JwtMintProcess::fileAccessLog, this::accessArrived);
@@ -363,10 +363,10 @@ public final class JwtPane extends JPanel {
                     + JwtMintProcess.STR_PASSWORD + " at " + JwtMintProcess.strUrlBase() + "/ui");
         }
         catch (RuntimeException ex) {
-            this.strWhyNoService = String.valueOf(ex.getMessage());
+            this.strWhyNoService = Failures.strWhy(ex);
             lblStatus.setText("not running - no jar");
             lblStatus.setForeground(GuiTheme.COL_BAD);
-            log.append(String.valueOf(ex.getMessage()));
+            log.append(Failures.strWhy(ex));
         }
     }
 
@@ -470,17 +470,23 @@ public final class JwtPane extends JPanel {
 
 
     /**
-     * Stops the service and starts it again, which is what a Sandbox Start
-     * does: the participant about to come up may read the JWKS from here.
+     * The first half of what a Sandbox Start does to the service: stops it,
+     * so {@link #startService} can start it again for the participant about
+     * to come up, which may read the JWKS from here.
+     *
+     * OFF THE EVENT THREAD - his report, 2026-10-27: the press of Start went
+     * unanswered for seconds. The stop waits for the provider's process to
+     * exit, up to ten seconds, and on the event thread nothing repainted until
+     * it had. Called on the start thread; {@link #startService} goes back to
+     * the event thread afterwards.
      */
-    public void restartService() {
+    public void stopServiceForStart() {
         // UNCONDITIONALLY, whatever the mode is NOW. `isExternal` says where
         // this window is pointed, not what it started: a child launched before
         // the url was typed still holds the mint port, and leaving it would
         // make the next embedded start fail to bind rather than say why.
         mint.stop();
         tailAccess.stop();
-        startService();
     }
 
 
@@ -496,7 +502,7 @@ public final class JwtPane extends JPanel {
      * IT DOES NOT STOP A PROVIDER THIS WINDOW ALREADY STARTED. A participant
      * that is up fetched its keys from that service and may fetch them again;
      * killing it underneath a running stack is a bigger thing than changing a
-     * setting. {@link #restartService} takes it down at the next start, which
+     * setting. {@link #stopServiceForStart} takes it down at the next start, which
      * is also when the new url takes effect.
      */
     private void urlApplyRequested() {
@@ -505,7 +511,7 @@ public final class JwtPane extends JPanel {
             strWanted = RaposzaSettings.strUrlNormalised(fldUrlOidc.getText());
         }
         catch (IllegalArgumentException ex) {
-            log.append(String.valueOf(ex.getMessage()));
+            log.append(Failures.strWhy(ex));
             notice("Not applied - " + ex.getMessage());
             return;
         }
@@ -905,7 +911,9 @@ public final class JwtPane extends JPanel {
      * @param strToken the bearer to present
      */
     private void usersRequested(String strToken) {
-        String strUrl = "http://127.0.0.1:" + nPortJsonApi + "/v2/users";
+        // THE PATH OF THE GENERATION RUNNING - `SandboxUsers.STR_PATH_V1` says why.
+        String strUrl = "http://127.0.0.1:" + nPortJsonApi
+                + com.raposza.sandbox.app.SandboxUsers.strPathUsers(version);
         getFrom(strUrl, strToken, strBody -> {
             List<String> lstUser = lstUserOf(strBody);
             if (lstUser.isEmpty()) {
@@ -927,18 +935,23 @@ public final class JwtPane extends JPanel {
 
 
     /**
-     * The documented response is `{"users":[{"id":...}, ...]}`.
+     * The documented responses: 3.x `{"users":[{"id":...}, ...]}`, 2.x
+     * `{"result":[{"userId":...}, ...]}` - `SandboxUsers.STR_PATH_V1`.
      *
-     * @param strBody what the JSON Ledger API returned
+     * @param strBody what the JSON API returned
      * @return the user ids, in the order they arrived
      */
     private List<String> lstUserOf(String strBody) {
         List<String> lstOut = new ArrayList<>();
         try {
             JsonNode nodeRoot = mapper.readTree(strBody);
-            JsonNode nodeUsers = nodeRoot.path("users");
-            for (JsonNode nodeUser : nodeUsers) {
+            for (JsonNode nodeUser : nodeRoot.path("users")) {
                 String strId = nodeUser.path("id").asText("");
+                if (!strId.isEmpty() && !lstOut.contains(strId))
+                    lstOut.add(strId);
+            }
+            for (JsonNode nodeUser : nodeRoot.path("result")) {
+                String strId = nodeUser.path("userId").asText("");
                 if (!strId.isEmpty() && !lstOut.contains(strId))
                     lstOut.add(strId);
             }
@@ -1013,7 +1026,7 @@ public final class JwtPane extends JPanel {
                 strBody = resp.body();
             }
             catch (IOException ex) {
-                failed(strUrl, String.valueOf(ex.getMessage()));
+                failed(strUrl, Failures.strWhy(ex));
                 return;
             }
             catch (InterruptedException ex) {

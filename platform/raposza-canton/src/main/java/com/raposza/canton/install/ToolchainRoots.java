@@ -104,6 +104,15 @@ public record ToolchainRoots(Path dirDaml, Path dirDpm, Path fileDaml, Path file
     /** And DPM's, which holds `components` and `sdk` beneath it. */
     public static final String STR_MARKER_DPM = "cache";
 
+    /** A root named by `DPM_HOME` - R3, his handover of 2026-10-30. */
+    public static final String STR_FROM_DPM_HOME = "from DPM_HOME";
+
+    /** A root read off the launcher on PATH. */
+    public static final String STR_FROM_PATH = "from the launcher on PATH";
+
+    /** Nothing named one. */
+    public static final String STR_FROM_DEFAULT = "the platform default";
+
     private static final String STR_DIR_DAML_UNIX = ".daml";
 
     private static final String STR_DIR_DPM_UNIX = ".dpm";
@@ -139,6 +148,85 @@ public record ToolchainRoots(Path dirDaml, Path dirDpm, Path fileDaml, Path file
         return of(System.getenv("PATH"), System.getenv(), strOs.contains("win"),
                 Path.of(System.getProperty("user.home", ".")), settings.dirDaml(),
                 settings.dirDpm());
+    }
+
+
+    /**
+     * What the roots would be with neither setting - what a blank directory
+     * field in Settings stands for.
+     *
+     * @return the roots this JVM's environment describes alone
+     */
+    public static ToolchainRoots ofUnset() {
+        return of(System.getenv("PATH"), System.getenv(), flagWindowsHere(),
+                Path.of(System.getProperty("user.home", ".")));
+    }
+
+
+    /**
+     * @return where {@link #ofUnset()}'s DPM root comes from, in words
+     */
+    public static String strFromDpm() {
+        return strFromDpm(System.getenv("PATH"), System.getenv(), flagWindowsHere());
+    }
+
+
+    /**
+     * @return where {@link #ofUnset()}'s assistant root comes from, in words
+     */
+    public static String strFromDaml() {
+        return strFromDaml(System.getenv("PATH"), flagWindowsHere());
+    }
+
+
+    /**
+     * The order is {@link #of}'s with no setting: `DPM_HOME`, then the
+     * launcher on PATH, then the platform default.
+     *
+     * @param strPath the PATH to search, which may be null or empty
+     * @param mapEnv the environment; never null
+     * @param flagWindows which layout applies
+     * @return {@link #STR_FROM_DPM_HOME}, {@link #STR_FROM_PATH} or
+     *         {@link #STR_FROM_DEFAULT}
+     */
+    public static String strFromDpm(String strPath, Map<String, String> mapEnv,
+            boolean flagWindows) {
+        if (dirOfEnv(mapEnv.get(STR_ENV_DPM_HOME)) != null)
+            return STR_FROM_DPM_HOME;
+        if (dirRootOf(fileOnPath(strPath, STR_NAME_DPM, flagWindows), STR_MARKER_DPM) != null)
+            return STR_FROM_PATH;
+        return STR_FROM_DEFAULT;
+    }
+
+
+    /**
+     * @param strPath the PATH to search, which may be null or empty
+     * @param flagWindows which layout applies
+     * @return {@link #STR_FROM_PATH} or {@link #STR_FROM_DEFAULT}
+     */
+    public static String strFromDaml(String strPath, boolean flagWindows) {
+        if (dirRootOf(fileOnPath(strPath, STR_NAME_DAML, flagWindows), STR_MARKER_DAML) != null)
+            return STR_FROM_PATH;
+        return STR_FROM_DEFAULT;
+    }
+
+
+    /**
+     * @param strPath the PATH to search, which may be null or empty
+     * @param strName a launcher's base name
+     * @param flagWindows which extensions to try
+     * @return the first match on PATH, unresolved, or null
+     */
+    public static Path fileOnPathOf(String strPath, String strName, boolean flagWindows) {
+        return fileOnPath(strPath, strName, flagWindows);
+    }
+
+
+    /**
+     * @return whether this JVM runs on Windows
+     */
+    public static boolean flagWindowsHere() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
 
 

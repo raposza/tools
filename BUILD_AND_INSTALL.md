@@ -15,7 +15,7 @@ leaves open. Read it before you run the Sandbox on a machine other people use.
 | | check with |
 | --- | --- |
 | JDK 21 | `java -version` |
-| Maven 3.9 or later | `mvn -version` |
+| Maven 3.8.7 or later | `mvn -version` |
 | Git | `git --version` |
 
 The build resolves its dependencies from Maven Central, so it needs a route
@@ -87,17 +87,30 @@ The window first asks what to start:
 
 ### Get Canton
 
+On a first start - no settings file, or no Raposza directory - the window
+checks the machine and says what it found and what is missing, with a button
+for each install it can do: **Download DPM**, **Install DPM from file...**,
+**Install Splice...**. **Check this machine** on the Settings tab shows it
+again.
+
 A machine with no DPM shows an empty SDK box. Its **Install** asks **Install
 DPM?**, fetches Digital Asset's package manager, DPM, into your home directory
 and selects the SDK DPM brought. Once DPM is there, the same button opens a
 dialog that installs further SDKs, newest first. On LocalNetND a banner at the
 top of the window offers DPM instead, the box lists Splice bundles, and the
-button lists Splice releases and downloads the one you choose into
-`~/.splice`.
+button lists Splice releases from 0.8 on and downloads the one you choose
+into `~/.splice`. A Splice release runs on the newest installed Canton of the
+line it names; when none is installed, Start offers to install one.
+
+Where downloads are blocked, fetch the archives by hand and install them from
+file: **Install DPM from file...** takes `dpm-<version>-<os>-amd64.tar.gz` or
+`.zip` from `https://get.digitalasset.com/install/dpm-sdk/`, and **Install from
+file...** in the Splice dialog takes `<version>_splice-node.tar.gz`.
 
 These downloads are checked by TLS only, and the installers they contain are
-then run. `docs/security-review.md` section 2 says exactly what is fetched and
-from where.
+then run; an archive installed from file is not checked at all.
+`docs/security-review.md` section 2 says exactly what is fetched and from
+where.
 
 ### Start a stack
 
@@ -158,6 +171,12 @@ The connection dialog offers two things:
 | Workbench profiles, the CaQL audit log | `~/.raposza` | `%USERPROFILE%\.raposza` |
 | Splice bundles | `~/.splice` | `%USERPROFILE%\.splice` |
 | LocalNetND's run directory | `~/.splice/native-localnet` | `%USERPROFILE%\.splice\native-localnet` |
+| the Sandbox's debug logs, the newest ten | `~/.raposza/logs` | `%APPDATA%\raposza\logs` |
+
+Every Sandbox window writes one debug log there, with every log line, the
+settings file and the proxy and Java environment variables; the console prints
+its path. Attach it to a bug report, after reading it: it holds the test
+credentials `SECURITY.md` lists.
 
 The Sandbox's Settings tab has three more directories at the bottom, for
 installations that already exist somewhere else - your own, or a corporate

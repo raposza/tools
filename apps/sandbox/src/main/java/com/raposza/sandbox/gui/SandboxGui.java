@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.sandbox.gui;
 
+import com.raposza.runtime.settings.RaposzaSettings;
 import com.raposza.sandbox.app.DiscoveryDoc;
 import com.raposza.sandbox.app.SandboxApp;
 import com.raposza.sandbox.app.SandboxOptions;
 
 import java.awt.GraphicsEnvironment;
 import java.net.http.HttpClient;
+import java.nio.file.Path;
 
 import javax.swing.SwingUtilities;
 
@@ -50,6 +52,23 @@ public final class SandboxGui {
      */
     public static void open(String[] arrArg) {
         LogTee.install();
+        // FIRST START IS READ BEFORE THE DEBUG LOG OPENS - the log creates its
+        // directory under the Raposza home, R1.
+        FirstStart.detect();
+        // EVERYTHING INTO ONE FILE, opened before anything else logs - his
+        // instruction, 2026-10-30. Lines produced before it opens are held.
+        try {
+            Path fileDebug = DebugLog.open(
+                    RaposzaSettings.current().dirHome().resolve(DebugLog.STR_DIR), arrArg,
+                    RaposzaSettings.fileStore());
+            if (fileDebug != null)
+                System.err.println("debug log: " + fileDebug);
+        }
+        catch (RuntimeException ex) {
+            System.err.println("the debug log could not be opened: " + ex);
+        }
+        if (FirstStart.isFirst())
+            System.err.println("first start: " + FirstStart.strWhy());
 
         if (GraphicsEnvironment.isHeadless()) {
             System.err.println("the window needs a display, and this JVM is headless;"
@@ -101,7 +120,7 @@ public final class SandboxGui {
                 SandboxWindow.open(optionsForm, strTopology);
             }
             catch (RuntimeException ex) {
-                Modals.error(null, String.valueOf(ex.getMessage()));
+                Modals.error(null, Failures.strWhy(ex));
             }
         });
     }

@@ -928,12 +928,16 @@ final class ParticipantPane extends JPanel {
         navigator.setSnapshot(null);
         showProfileColour(profileActive, "reading ledger...");
 
-        new SwingWorker<Loaded, Void>() {
+        new SwingWorker<Loaded, LedgerSnapshot>() {
 
             @Override
             protected Loaded doInBackground() {
                 LedgerSnapshot snapshot = LedgerSnapshot.load(clientRead, lstPartyRead,
                         LedgerSnapshot.CNT_LIMIT_DEFAULT);
+                // THE STARTER SCRIPT NEEDS THE PARTIES, NOT THE PACKAGES - his
+                // finding on the WinVM, 2026-10-30: the CaQL script arrived
+                // with a delay, because it waited for every package to decode.
+                publish(snapshot);
 
                 // Packages are read on the SAME pass, and a failure here is
                 // carried rather than thrown - for the reason every section of
@@ -954,6 +958,16 @@ final class ParticipantPane extends JPanel {
                     return new Loaded(snapshot, null, "packages: " + LedgerSnapshot.describe(ex),
                             null);
                 }
+            }
+
+
+            @Override
+            protected void process(List<LedgerSnapshot> lstSnapshot) {
+                if (lstSnapshot.isEmpty())
+                    return;
+                LedgerSnapshot snapshot = lstSnapshot.get(lstSnapshot.size() - 1);
+                paneCaql.setScriptIfEmpty(AviationScript.strFor(snapshot));
+                paneCaql.setScriptIfEmpty(PharmaScript.strFor(snapshot));
             }
 
 

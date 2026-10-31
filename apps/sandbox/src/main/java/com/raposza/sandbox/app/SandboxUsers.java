@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package com.raposza.sandbox.app;
 
+import com.raposza.canton.install.VersionId;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -53,6 +54,74 @@ public final class SandboxUsers {
 
     /** No ledger lists more users than this on a developer's participant. */
     private static final int N_PAGES_MAX = 50;
+
+    /** 3.x, the JSON Ledger API: `{"users":[{"id":...}],"nextPageToken":...}`, paged. */
+    public static final String STR_PATH_V2 = "/v2/users";
+
+    /**
+     * 2.x, the HTTP JSON API: `{"result":[{"userId":...,"primaryParty":...}],
+     * "status":200}`, every page in one answer - Daml 2.10.4's own
+     * `Endpoints.scala` (`path("users") apply toGetRoute(req, listUsers)`) and
+     * `HttpServiceIntegrationTestUserManagement`, read 2026-10-30. A 2.10.4
+     * Sandbox on the WinVM answered `/v2/users` with 404 that day, and every
+     * start reported "OIDC user registration FAILED" with the lamp left amber.
+     */
+    public static final String STR_PATH_V1 = "/v1/users";
+
+
+    /**
+     * @param version the Canton running, or null
+     * @return the path its JSON API lists users at
+     */
+    public static String strPathUsers(VersionId version) {
+        return version != null && version.major() < 3 ? STR_PATH_V1 : STR_PATH_V2;
+    }
+
+
+    /**
+     * The participant's users, through the API its generation serves.
+     *
+     * @param strUrlJson its JSON API, no trailing slash
+     * @param strToken a bearer for `participant_admin`
+     * @param version the Canton running, or null for 3.x
+     * @return the user ids, in ledger order
+     * @throws IOException when the ledger refuses
+     * @throws InterruptedException when interrupted while waiting
+     */
+    public static List<String> lstRead(String strUrlJson, String strToken, VersionId version)
+            throws IOException, InterruptedException {
+        if (!STR_PATH_V1.equals(strPathUsers(version)))
+            return lstRead(strUrlJson, strToken);
+
+        HttpClient client = HttpClient.newBuilder().connectTimeout(DUR_REQUEST).build();
+        String strUrl = strUrlJson + STR_PATH_V1;
+        HttpResponse<String> res = client.send(HttpRequest.newBuilder(URI.create(strUrl))
+                .timeout(DUR_REQUEST).header("Authorization", "Bearer " + strToken).GET()
+                .build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() / 100 != 2)
+            throw new IOException("GET " + strUrl + " answered " + res.statusCode() + ": "
+                    + res.body());
+        return lstOfV1(res.body());
+    }
+
+
+    /**
+     * @param strBody what 2.x's `GET /v1/users` returned
+     * @return the user ids, once each, in order
+     * @throws IOException when it is not that shape
+     */
+    public static List<String> lstOfV1(String strBody) throws IOException {
+        JsonNode nodeRoot = MAPPER.readTree(strBody);
+        if (nodeRoot == null || !nodeRoot.path("result").isArray())
+            throw new IOException("not a user list: " + strBody);
+        List<String> lstOut = new ArrayList<>();
+        for (JsonNode nodeUser : nodeRoot.path("result")) {
+            String strId = nodeUser.path("userId").asText("");
+            if (!strId.isEmpty() && !lstOut.contains(strId))
+                lstOut.add(strId);
+        }
+        return lstOut;
+    }
 
 
     private SandboxUsers() {

@@ -82,14 +82,17 @@ public final class RunDirectory {
 
 
     /**
-     * Deletes the cluster and makes sure all three exist.
+     * Makes sure the work and DAR directories exist. The cluster is left
+     * alone - {@link #wipeData} is the other half of a start.
      *
-     * @throws IllegalStateException when the data directory cannot be removed,
-     *         because starting on top of a cluster that was meant to be gone
-     *         fails later and further away
+     * TWO HALVES SINCE 2026-10-27, his report that Start answered seconds
+     * late. This half is cheap and runs on the event thread, before the form
+     * asks the DAR directory what it holds. The wipe walks and deletes a whole
+     * PostgreSQL cluster and runs on the start thread.
+     *
+     * @throws IllegalStateException when a directory cannot be created
      */
-    public void prepare() {
-        wipeData();
+    public void prepareDirectories() {
         try {
             Files.createDirectories(dirWork());
             Files.createDirectories(dirDars());
@@ -114,7 +117,15 @@ public final class RunDirectory {
     }
 
 
-    private void wipeData() {
+    /**
+     * Deletes the cluster. Called on the start thread, never the event
+     * thread - see {@link #prepareDirectories}.
+     *
+     * @throws IllegalStateException when the data directory cannot be removed,
+     *         because starting on top of a cluster that was meant to be gone
+     *         fails later and further away
+     */
+    public void wipeData() {
         Path dirData = dirData();
         if (!Files.exists(dirData))
             return;

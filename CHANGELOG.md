@@ -2,6 +2,58 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Changelog
 
+## 0.6.3 - 2026-10-31
+
+* **A first-start check.** The first time the Sandbox runs on a machine - no
+  settings file, or no Raposza directory - it shows what it found before
+  anything else: DPM and the Daml Assistant with their directories and SDKs,
+  the Splice versions and the Canton each would start on, installations
+  elsewhere that it does not use, and the `java` on `PATH` it starts Canton
+  with. It offers only what is missing: **Download DPM**, **Install DPM from
+  file...**, **Install Splice...**, and **Use the one found** for an
+  installation elsewhere. **Settings > Check this machine** runs it again. A
+  blank DAML Assistant, DPM or Splice directory on the Settings tab shows the
+  default it stands for.
+* **DPM from file.** Where downloads are blocked, the DPM archive fetched by
+  hand installs with **Install DPM from file...**, with no network. A failed
+  DPM download offers the file instead of ending there, and the file chooser
+  opens in the home directory.
+* **LocalNetND runs Splice on the Canton its release names.** The Sandbox
+  reads the Canton version from the Splice bundle and starts the newest
+  installed patch of that line - Splice 0.9.4 runs on Canton 3.6.3 when 3.6.4
+  is not installed. Before, it took the newest Canton of any line. When no
+  Canton of the line is installed, the start offers one: **Download** installs
+  the newest Daml SDK of that line through DPM, **Install from file...** takes
+  the archive. Splice 0.8 is the lowest LocalNetND runs, and **Install
+  Splice** lists 0.8 and later.
+* **One debug log.** Every window writes `logs/sandbox-<time>-<pid>.log` under
+  the Raposza directory: a header with the jar, Java, the operating system,
+  the settings file and the environment variables a toolchain or a proxy is
+  found through, then every line of every log pane and of the console, each
+  tagged with where it came from. The newest ten are kept, and the console
+  prints the path. It carries the Sandbox's test credentials - `SECURITY.md`.
+* **Start answers at once** (#5). Wiping the database, restoring a snapshot
+  and restarting the identity provider run after the controls are disabled
+  and the first line is written, off the window's event thread.
+* **Install Splice with downloads blocked** says why the list could not be
+  read instead of showing an empty dialog (#8). A failure that carries no
+  message is named by its type instead of "null".
+* **The Workbench's Aviation CaQL script on Canton 2.x** (#7). The starter
+  script finds a 2.x party by its display name, and is offered as soon as the
+  parties are read, before the packages decode. On 2.x the Sandbox reads the
+  ledger's users from `GET /v1/users`. The **Test fixture** lamp shows that the
+  fixture is starting while it runs.
+* **Documentation** (#3). `apps/sandbox/README.md` gives the embedded
+  PostgreSQL's default port as 32101, and `BUILD_AND_INSTALL.md` asks for
+  Maven 3.8.7 or later, the version the release is built with.
+  `FIRST_INSTALL.md` covers the first-start check and the installs from file,
+  tested with Daml SDK 3.6.3 and Splice 0.9.4.
+* **Guava 33.7.2-jre**, from 33.3.0-jre, in both jars: CVE-2026-102554,
+  GHSA-xxph-c9ww-hj94. Nothing in Raposza deserializes Java objects.
+* **Build.** The jsoup the build forces into maven-site-plugin is 1.23.2,
+  and the release workflow's maven-help-plugin runs with jsoup 1.23.2,
+  XStream 1.4.21 and plexus-utils 4.0.3 forced into it.
+
 ## 0.6.2 - 2026-10-26
 
 * **PQS from DPM, on every platform.** With PQS on, the Sandbox runs the

@@ -233,10 +233,12 @@ public final class SpliceInstallDialog extends JDialog {
         Thread threadLoad = new Thread(() -> {
             try {
                 List<String> lstVersion = loader.lstPublished();
+                if (lstVersion == null)
+                    throw new IOException("no release list was returned");
                 SwingUtilities.invokeLater(() -> loaded(lstVersion, null));
             }
             catch (IOException | RuntimeException ex) {
-                SwingUtilities.invokeLater(() -> loaded(null, ex.getMessage()));
+                SwingUtilities.invokeLater(() -> loaded(null, strWhy(ex)));
             }
         }, "raposza-splice-releases");
         threadLoad.setDaemon(true);
@@ -265,8 +267,10 @@ public final class SpliceInstallDialog extends JDialog {
             addRow(gbc, nRow, strVersion);
             nRow++;
         }
-        lblStatus.setForeground(GuiTheme.colMuted());
-        lblStatus.setText(" ");
+        // THE FOOTER IS LEFT ALONE. Nothing before this wrote to it but an
+        // install - begin, say, done - and a list landing after a file install
+        // had begun blanked its progress or its failure: the dialog test met
+        // that race four runs in ten, 2026-10-30.
         pnlRows.revalidate();
         pnlRows.repaint();
         size(new ArrayList<>(mapButton.keySet()));
@@ -357,8 +361,25 @@ public final class SpliceInstallDialog extends JDialog {
     }
 
 
+    /**
+     * A MESSAGE IS NOT GUARANTEED. Until 2026-10-29 a failure was passed on as
+     * its message, and a failure with none read as a success: the release list
+     * threw a NullPointerException on the event thread and showed nothing, and
+     * a failed install closed the dialog as if nothing had been asked.
+     * Reported on Windows with downloads blocked, 2026-10-29.
+     *
+     * @param ex what was thrown
+     * @return its message, or its class when it carries none
+     */
+    static String strWhy(Throwable ex) {
+        return Failures.strWhy(ex);
+    }
+
+
     private void chooseFile() {
-        JFileChooser chooser = new JFileChooser();
+        // THE USER'S HOME, not Documents - his finding on the WinVM, 2026-10-30.
+        // A JFileChooser with no directory opens in Documents on Windows.
+        JFileChooser chooser = new JFileChooser(System.getProperty("user.home"));
         // Hidden directories shown - `~/.raposza` and `~/.splice` are dotted.
         chooser.setFileHidingEnabled(false);
         chooser.setDialogTitle(STR_FILE);
@@ -406,7 +427,7 @@ public final class SpliceInstallDialog extends JDialog {
                 SwingUtilities.invokeLater(() -> done(strVersion, null));
             }
             catch (IOException | RuntimeException ex) {
-                SwingUtilities.invokeLater(() -> done(null, ex.getMessage()));
+                SwingUtilities.invokeLater(() -> done(null, strWhy(ex)));
             }
         }, "raposza-splice-install");
         threadInstall.setDaemon(true);

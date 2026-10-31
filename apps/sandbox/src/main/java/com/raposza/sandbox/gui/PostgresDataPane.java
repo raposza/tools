@@ -193,7 +193,7 @@ public final class PostgresDataPane extends JPanel {
             }
             catch (SQLException | RuntimeException ex) {
                 mapDatabase = new LinkedHashMap<>();
-                strError = String.valueOf(ex.getMessage());
+                strError = Failures.strWhy(ex);
             }
             Map<String, Map<String, List<String>>> mapDone = mapDatabase;
             String strErrorDone = strError;
@@ -359,7 +359,7 @@ public final class PostgresDataPane extends JPanel {
                 readRows(coord, strSchema, strTable, lstColumn, lstRow);
             }
             catch (SQLException | RuntimeException ex) {
-                strError = String.valueOf(ex.getMessage());
+                strError = Failures.strWhy(ex);
             }
             String strErrorDone = strError;
             SwingUtilities.invokeLater(() -> rowsDone(strQualified, lstColumn, lstRow,

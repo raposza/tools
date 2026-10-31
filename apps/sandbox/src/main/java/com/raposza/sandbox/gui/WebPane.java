@@ -124,7 +124,7 @@ public final class WebPane extends JPanel {
     private final JLabel lblState = new JLabel(" ");
 
     /** Every request to a page on Endpoints. */
-    private final LogPane logAccess = new LogPane();
+    private final LogPane logAccess = new LogPane().useDebugLog("Web access");
 
     private final transient WebRepeats repeats = new WebRepeats();
 

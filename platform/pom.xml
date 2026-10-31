@@ -11,7 +11,7 @@
 
     <groupId>com.raposza</groupId>
     <artifactId>raposza-platform</artifactId>
-    <version>0.6.2</version>
+    <version>0.6.3</version>
     <packaging>pom</packaging>
     <name>raposza-platform</name>
     <description>Explore and act on a Canton participant node</description>
@@ -43,11 +43,13 @@
              through the Daml artefacts and are managed so that the version
              is ours. Bouncy Castle 1.85 since 2026-10-05, from 1.83:
              CVE-2026-8763, GHSA-9pwp-9qqc-pr26 - name constraints bypassed
-             by a trailing dot, fixed in 1.85. Guava 33.3.0-jre, the newest
-             already in this reactor, over 31.1-jre: CVE-2023-2976, fixed in
-             32.0.0. -->
+             by a trailing dot, fixed in 1.85. Guava 33.7.2-jre since 2026-10-31:
+             CVE-2026-102554, GHSA-xxph-c9ww-hj94 - an allocation sized from
+             an unchecked count in a serialized stream, fixed in 33.7.2.
+             Before that 33.3.0-jre, the newest already in this reactor, over
+             31.1-jre: CVE-2023-2976, fixed in 32.0.0. -->
         <bouncycastle.version>1.85</bouncycastle.version>
-        <guava.version>33.3.0-jre</guava.version>
+        <guava.version>33.7.2-jre</guava.version>
         <!-- JWKS parsing and JWT signing. Nimbus rather than a hand-rolled JWK
              reader: decoding RSA CRT parameters and dispatching on key type is
              commodity, security-critical work with a long encoding tail.
@@ -499,12 +501,12 @@
                     <version>${maven.site.version}</version>
                     <dependencies>
                         <!-- Forced since 2026-10-05, dependency report
-                             20261005_1130Z: jsoup 1.23.1 (CVE-2026-71497,
-                             fixed in 1.23.1). -->
+                             20261005_1130Z: jsoup 1.23.2 (CVE-2026-71497, CVE-2026-75140;
+                             fixed in 1.23.1 and 1.23.2). -->
                         <dependency>
                             <groupId>org.jsoup</groupId>
                             <artifactId>jsoup</artifactId>
-                            <version>1.23.1</version>
+                            <version>1.23.2</version>
                         </dependency>
                     </dependencies>
                 </plugin>
